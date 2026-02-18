@@ -82,7 +82,7 @@ module "gke" {
   configure_ip_masq     = true # --enable-ip-alias
   enable_shielded_nodes = true
   http_load_balancing   = false # Not defined in test cluster
-  # network_policy             = false # Not defined in test cluster
+  network_policy        = true # https://docs.educates.dev/en/stable/installation-guides/configuration-settings.html#restricting-network-access
   # horizontal_pod_autoscaling = true
   # filestore_csi_driver       = true
 #  fleet_project          = var.fleet_project # optional
