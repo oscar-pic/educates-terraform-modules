@@ -96,8 +96,8 @@ locals {
       aws = {
         region = "${var.aws_config.region}"
         irsaRoles = {
-          external-dns = "arn:aws:iam::${var.aws_config.account_id}:role/svc.bot.route53.external-dns-${var.aws_config.cluster_name}"
-          cert-manager = "arn:aws:iam::${var.aws_config.account_id}:role/svc.bot.route53.cert-manager-${var.aws_config.cluster_name}"
+          external-dns = var.aws_config.externaldns_irsa_role_arn
+          cert-manager = var.aws_config.certmanager_irsa_role_arn
         }
         route53 = {
           hostedZone = "${var.aws_config.dns_zone}"

@@ -9,7 +9,14 @@ output "gke" {
     externaldns_service_account = google_service_account.external-dns-gsa.email
   }
 
-  #   depends_on = [module.vpc, module.eks, module.certmanager_irsa_role, module.externaldns_irsa_role]
+  depends_on = [
+    module.gke,
+    google_service_account.cert-manager-gsa,
+    google_service_account.external-dns-gsa,
+    google_project_iam_binding.cert-manager-and-external-dns-as-dns-admin,
+    google_service_account_iam_binding.cert-manager-link-ksa-to-gsa,
+    google_service_account_iam_binding.external-dns-link-ksa-to-gsa,
+  ]
 }
 
 output "kubeconfig_file" {

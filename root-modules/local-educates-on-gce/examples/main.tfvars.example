@@ -1,0 +1,7 @@
+project_id      = "{{gcp_project_id}}"
+region          = "{{gcp_region}}"
+cluster_name    = "{{cluster_name}}"
+dns_zone_name   = "{{cloud_dns_zone_name}}"
+TLD             = "{{educates_ingress_domain}}"
+deploy_educates = true
+educates_version = "3.3.2"

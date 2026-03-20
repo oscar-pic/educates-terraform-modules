@@ -55,10 +55,12 @@ module "educates" {
   }
   infrastructure_provider = "aws"
   aws_config = {
-    account_id   = data.aws_caller_identity.current.account_id
-    cluster_name = var.cluster_name
-    region       = var.aws_region
-    dns_zone     = var.TLD
+    account_id                = data.aws_caller_identity.current.account_id
+    cluster_name              = var.cluster_name
+    region                    = var.aws_region
+    dns_zone                  = var.TLD
+    certmanager_irsa_role_arn = module.eks_for_educates.eks.certmanager_irsa_role
+    externaldns_irsa_role_arn = module.eks_for_educates.eks.externaldns_irsa_role
   }
 }
 

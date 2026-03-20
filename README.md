@@ -9,6 +9,7 @@ These are not versioned.
 
 - [gke](./root-modules/educates-on-gke/)
 - [eks](./root-modules/educates-on-eks/)
+- [local-educates-on-gce](./root-modules/local-educates-on-gce/) - Educates running on a Kind cluster inside a GCE VM
 
 ## Configuration examples
 
@@ -71,6 +72,29 @@ Optional:
     This is normally set in the environment with the `GCLOUD_REGION` variable.
 
 -   `gcp_project_id` is the GCP project under which the cluster will be provisioned and managed.
+
+### GCE (Local Educates on Kind)
+
+-   `project_id` is the GCP project under which the VM will be provisioned.
+
+-   `region` is the GCP region for the compute instance.
+
+-   `zone` (optional) is the specific GCP zone. Defaults to the first available zone in the region.
+    If a zone has capacity issues, set this explicitly (e.g. `europe-west4-a`).
+
+-   `cluster_name` is used for naming the VM, network, DNS records, and the Kind cluster.
+
+-   `machine_type` defaults to `e2-standard-4`.
+
+-   `dns_zone_name` is the name of an existing Cloud DNS managed zone.
+
+-   `TLD` is the top-level domain for DNS records (e.g. `google.educates.dev`).
+    The wildcard domain will be `<cluster_name>.<TLD>`.
+
+The VM is provisioned with a GCP service account that has `roles/dns.admin`,
+allowing cert-manager and external-dns inside the Kind cluster to authenticate
+via the GCE metadata server (Application Default Credentials) — no exported
+service account keys are needed.
 
 ### Ingress requirements
 

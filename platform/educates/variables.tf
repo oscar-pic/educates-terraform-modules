@@ -45,16 +45,20 @@ variable "infrastructure_provider" {
 #####
 variable "aws_config" {
   type = object({
-    account_id   = string
-    cluster_name = string
-    region       = string
-    dns_zone     = string
+    account_id                  = string
+    cluster_name                = string
+    region                      = string
+    dns_zone                    = string
+    certmanager_irsa_role_arn   = optional(string, "")
+    externaldns_irsa_role_arn   = optional(string, "")
   })
   default = {
-    account_id   = ""
-    cluster_name = ""
-    region       = ""
-    dns_zone     = ""
+    account_id                  = ""
+    cluster_name                = ""
+    region                      = ""
+    dns_zone                    = ""
+    certmanager_irsa_role_arn   = ""
+    externaldns_irsa_role_arn   = ""
   }
 }
 
