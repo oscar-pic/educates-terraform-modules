@@ -1,10 +1,6 @@
 resource "proxmox_virtual_environment_download_file" "os_image" {
   # Logic: If datastore.shared is true, loop once. If false, loop per node used.
-  for_each = var.proxmox_image_datastore.shared ? (
-    toset([var.proxmox_nodes[0]]) 
-  ) : (
-    toset([for n in var.kube_nodes : var.proxmox_nodes[n.proxmox_host]])
-  )
+  for_each = var.proxmox_image_datastore.shared ? toset([var.proxmox_nodes[0]]) : toset(var.proxmox_nodes)
   content_type = "iso"
   datastore_id = var.proxmox_image_datastore.name # Use the 'name' property
   node_name    = each.value

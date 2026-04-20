@@ -13,7 +13,7 @@ resource "null_resource" "wait_for_k3s" {
       user        = var.vm_user
       # Update: Use the first IP from your new map
       host        = values(var.kube_nodes)[0].ip_address
-      private_key = file("~/.ssh/id_rsa") # Ensure this is your key!
+      private_key = file(var.ssh_private_key_path)
     }
 
     inline = [

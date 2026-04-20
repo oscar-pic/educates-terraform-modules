@@ -4,7 +4,6 @@ deployment_flavor = "single-node"
 proxmox_nodes = ["pve01", "pve02"] # Array begins in position 0
 proxmox_endpoint  = "https://192.168.80.200:8006/"
 proxmox_api_token = "terraform-user@pve!TF-Token=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-proxmox_node      = "proxmox-server"
 
 # Storage & Images
 proxmox_image_datastore = {

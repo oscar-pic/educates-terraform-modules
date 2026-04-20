@@ -22,11 +22,6 @@ variable "proxmox_nodes" {
   default = ["proxmox-server"]
 }
 
-variable "proxmox_node" {
-  type    = string
-  default = "proxmox-server"
-}
-
 variable "ssh_private_key_path" {
   description = "Path to the SSH private key to connect to Proxmox"
   type        = string
