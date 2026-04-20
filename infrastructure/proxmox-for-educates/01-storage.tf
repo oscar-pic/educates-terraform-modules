@@ -5,7 +5,7 @@ resource "proxmox_virtual_environment_download_file" "os_image" {
   datastore_id = var.proxmox_image_datastore.name # Use the 'name' property
   node_name    = each.value
   url          = var.cloud_image_url
-  file_name    = "ubuntu-24.04-cloud.img"
+  file_name    = var.proxmox_image_filename
 }
 
 resource "proxmox_virtual_environment_file" "k3s_cloud_config" {

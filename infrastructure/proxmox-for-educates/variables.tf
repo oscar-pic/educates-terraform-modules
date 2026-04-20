@@ -58,6 +58,12 @@ variable "cloud_image_url" {
   default = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 }
 
+variable "proxmox_image_filename" {
+  description = "The name of the file as it will appear in the Proxmox storage"
+  type        = string
+  default     = "ubuntu-24.04-cloud.img"
+}
+
 variable "proxmox_network_bridge" { 
   type    = string
   default = "vmbr0" 
@@ -69,7 +75,7 @@ variable "vm_user" {
 }
 
 variable "vm_password" {
-  description = "Contraseña para el usuario 'debian' en las VMs"
+  description = "Contraseña para el usuario 'ubuntu' en las VMs"
   type        = string
   sensitive   = true # Prevents it from being displayed in plain text in the terminal/logs 
 }
@@ -90,11 +96,13 @@ variable "kube_nodes" {
   type = map(object({
     type           = string 
     proxmox_host   = number
+    mac_address    = optional (string, "")
     ip_address     = string
-    mac_address    = string
-    vm_cores       = optional(number, 8)
-    vm_memory      = optional(number, 16384)
-    vm_disk_size   = optional(number, 50)
+    gateway        = string
+    dns_servers    = optional(list(string), ["8.8.8.8, 1.1.1.1"]) # Default if not specified
+    vm_cores       = optional(number, 4)
+    vm_memory      = optional(number, 8192)
+    vm_disk_size   = optional(number, 30)
     config_patches = optional(list(string), [])
   }))
 }
