@@ -1,8 +1,3 @@
-locals {
-  #single_node_ip = [for n in var.kube_nodes : n.ip_address if n.type == "single-node"][0]
-  single_node_ip = values(var.kube_nodes)[0].ip_address
-}
-
 resource "null_resource" "wait_for_k3s" {
   # This tells Terraform to wait for the VM to be created first
   depends_on = [proxmox_virtual_environment_vm.kube_node]
