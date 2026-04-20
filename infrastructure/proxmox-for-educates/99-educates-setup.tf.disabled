@@ -1,7 +1,3 @@
-locals {
-  single_node_ip = [for n in var.kube_nodes : n.ip_address if n.type == "single-node"][0]
-}
-
 # --- TLS GENERATION ---
 resource "tls_private_key" "educates_key" {
   algorithm = "RSA"
@@ -27,23 +23,6 @@ provider "kubernetes" {
 provider "kubectl" {
   host     = "https://${local.single_node_ip}:6443"
   insecure = true
-}
-
-# --- WAIT LOGIC ---
-resource "null_resource" "wait_for_k3s" {
-  provisioner "remote-exec" {
-    connection {
-      type        = "ssh"
-      user        = var.vm_user
-      host        = local.single_node_ip
-      private_key = file("~/.ssh/id_rsa")
-    }
-    inline = [
-      "until [ -f /etc/rancher/k3s/k3s.yaml ]; do sleep 5; done",
-      "echo 'K3s Ready'"
-    ]
-  }
-  depends_on = [proxmox_virtual_environment_vm.kube_node]
 }
 
 # --- ENGINE: KAPP-CONTROLLER ---

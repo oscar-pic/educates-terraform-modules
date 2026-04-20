@@ -46,7 +46,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     ip_config {
       ipv4 {
         address = "${each.value.ip_address}/24"
-        gateway = "192.168.80.1" 
+        gateway = "192.168.1.1" 
       }
     }
 
