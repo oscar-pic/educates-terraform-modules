@@ -10,7 +10,7 @@ proxmox_image_datastore = {
   name   = "local"
   shared = false
 }
-proxmox_vm_datastore    = {
+proxmox_vms_datastore    = {
   name = "data-vms"
   shared = false
 }

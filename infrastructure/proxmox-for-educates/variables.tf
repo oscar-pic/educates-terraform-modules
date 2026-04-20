@@ -40,7 +40,7 @@ variable "proxmox_image_datastore" {
   }
 }
 
-variable "proxmox_vm_datastore" {
+variable "proxmox_vms_datastore" {
   description = "Storage for VMs Disks (ej: data-vms)"
   type = object({
     name   = string
@@ -48,7 +48,7 @@ variable "proxmox_vm_datastore" {
   })
   validation {
     # If flavor is NOT single-node, shared MUST be true.
-    condition     = var.deployment_flavor == "single-node" || var.proxmox_vm_datastore.shared == true
+    condition     = var.deployment_flavor == "single-node" || var.proxmox_vms_datastore.shared == true
     error_message = "CRITICAL: For cluster deployments, the VM datastore MUST be shared (NFS/Ceph) to ensure HA and data persistence across nodes."
   }
 }
@@ -56,11 +56,6 @@ variable "proxmox_vm_datastore" {
 variable "cloud_image_url" {
   type    = string
   default = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
-}
-
-variable "proxmox_image_datastore" { 
-  type    = string
-  default = "data-vms" 
 }
 
 variable "proxmox_network_bridge" { 
@@ -89,7 +84,6 @@ variable "portal_domain" {
   type    = string
   default = "educates.lab.inet"
 }
-
 
 variable "kube_nodes" {
   description = "Unified node configuration"

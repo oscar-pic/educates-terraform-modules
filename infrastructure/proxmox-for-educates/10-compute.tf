@@ -16,7 +16,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
   memory { dedicated = each.value.vm_memory }
 
   disk {
-    datastore_id = var.proxmox_vm_datastore.name
+    datastore_id = var.proxmox_vms_datastore.name
     
     file_id = var.proxmox_image_datastore.shared ? (
       proxmox_virtual_environment_download_file.os_image[var.proxmox_nodes[0]].id
