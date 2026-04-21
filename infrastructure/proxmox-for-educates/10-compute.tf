@@ -43,11 +43,12 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     interface    = "scsi1"
     upgrade = false
 
-    # MODIFICATION: Only use the snippet if the flavor is single-node/k3s
-    user_data_file_id = var.deployment_flavor == "single-node" ? (
-      proxmox_virtual_environment_file.k3s_cloud_config[each.key].id
-    ) : null
-    vendor_data_file_id = proxmox_virtual_environment_file.ubuntu_qemu_guest_agent.id
+    # Always use the flavor-aware snippet for Ubuntu/Debian nodes
+    # (Unless it's Talos, which you'd handle at the resource/dynamic block level)
+    vendor_data_file_id = proxmox_virtual_environment_file.ubuntu_flavor_config[each.key].id
+
+    # Keep user_data NULL to protect your SSH keys!
+    user_data_file_id = null
 
     ip_config {
       ipv4 {

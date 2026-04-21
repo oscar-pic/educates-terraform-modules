@@ -10,7 +10,8 @@ resource "null_resource" "wait_for_k3s" {
       type        = "ssh"
       # Pull from the map for THIS specific node
       user        = each.value.vm_user
-      host        = each.value.ip_address
+      # This takes "192.168.1.29/24" and turns it into "192.168.1.29"
+      host        = split("/", each.value.ip_address)[0]
       
       # Use the private key to log in
       private_key = file(var.ssh_private_key_path)

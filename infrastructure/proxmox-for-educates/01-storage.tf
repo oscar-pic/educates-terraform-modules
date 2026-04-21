@@ -13,7 +13,7 @@ resource "proxmox_download_file" "os_image" {
   }
 }
 
-resource "proxmox_virtual_environment_file" "k3s_cloud_config" {
+resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
   # Logic: If flavor is Talos, we create 0 snippets.
   # If it's single-node (k3s), we create snippets for the nodes.
   for_each = var.deployment_flavor == "single-node" ? var.kube_nodes : {}
@@ -27,31 +27,13 @@ resource "proxmox_virtual_environment_file" "k3s_cloud_config" {
     var.proxmox_nodes[each.value.proxmox_host]
   )
   source_raw {
-    data = templatefile("${path.module}/templates/k3s-init.tftpl", {
-      hostname      = each.key
+    data = templatefile("${path.module}/templates/ubuntu-payload.tftpl", {
+      hostname          = each.key
+      deployment_flavor = var.deployment_flavor
       # This adds 6 spaces to the start of every line in your config_patches list
-      extra_configs = join("\n      ", each.value.config_patches)
+      extra_configs     = join("\n      ", each.value.config_patches)
     })
-    # This names the file on the Proxmox storage (e.g., k3s-init-educates-01.yaml)
-    file_name = "k3s-init-${each.key}.yaml"
-  }
-}
-
-resource "proxmox_virtual_environment_file" "ubuntu_qemu_guest_agent" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "proxmox-server"
-
-  source_raw {
-    data = <<EOF
-#cloud-config
-ssh_pwauth: true  # <--- This allows password login via SSH
-runcmd:
-  - apt-get update
-  - apt-get install -y qemu-guest-agent
-  - systemctl enable qemu-guest-agent
-  - systemctl start qemu-guest-agent
-EOF
-    file_name = "ubuntu-qemu-install.yaml"
+    # This names the file on the Proxmox storage (e.g., qemu-k3s-init-educates-01.yaml)
+    file_name = "ubuntu-${var.deployment_flavor}-${each.key}.yaml"
   }
 }

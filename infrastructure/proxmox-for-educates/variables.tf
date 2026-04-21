@@ -1,9 +1,9 @@
 variable "deployment_flavor" {
   type        = string
-  description = "The type of deployment: 'single-node', 'k3s-cluster', or 'talos-cluster'"
+  description = "The type of deployment: 'single-node', 'rke2-cluster', or 'talos-cluster'"
   validation {
-    condition     = contains(["single-node", "k3s-cluster", "talos-cluster"], var.deployment_flavor)
-    error_message = "Flavor must be one of: single-node, k3s-cluster, talos-cluster."
+    condition     = contains(["single-node", "rke2-cluster", "talos-cluster"], var.deployment_flavor)
+    error_message = "Flavor must be one of: single-node, rke2-cluster, talos-cluster."
   }
 }
 

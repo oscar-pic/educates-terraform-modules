@@ -1,0 +1,58 @@
+#cloud-config
+hostname: ${hostname}
+ssh_pwauth: true  # <--- This allows password login via SSH
+write_files:
+  - path: /etc/rancher/k3s/config.yaml.d/node-custom.yaml
+    content: |
+      ${extra_configs}
+ntp:
+  enabled: true
+  servers:
+    - 0.es.pool.ntp.org
+    - 1.es.pool.ntp.org
+    - time.google.com
+runcmd:
+  - |
+    #!/bin/bash
+    exec > /var/log/k3s-rke2-install.log 2>&1
+    set -x
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    echo "Waiting for apt lock..."
+    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+      sleep 5
+    done
+
+    echo "Installing requirements..."
+    apt-get update
+    apt-get install -y qemu-guest-agent curl
+    systemctl enable --now qemu-guest-agent || true
+    systemctl start qemu-guest-agent || true
+
+    echo "Flavor check: ${deployment_flavor}"
+
+    # --- K3S SINGLE NODE ---
+    %{ if deployment_flavor == "single-node" ~}
+    echo "Installing K3s..."
+    until curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644" sh -; do
+      echo "K3s download failed, retrying..."
+      sleep 10
+    done
+    %{ endif ~}
+
+    # --- RKE2 CLUSTER ---
+    %{ if deployment_flavor == "rke2-cluster" ~}
+    echo "Preparing RKE2 directories..."
+    mkdir -p /etc/rancher/rke2/
+    echo "Installing RKE2..."
+    until curl -sfL https://get.rke2.io | sh; do
+      echo "RKE2 download failed, retrying..."
+      sleep 10
+    done
+    # For RKE2, we just enable the service; you'll manually/Terraform-ly configure /etc/rancher/rke2/config.yaml later
+    systemctl enable --now rke2-server || true
+    systemctl start rke2-server || true
+    %{ endif ~}
+    
+    echo "Setup complete."
