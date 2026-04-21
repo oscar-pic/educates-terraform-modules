@@ -19,9 +19,9 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     datastore_id = var.proxmox_vms_datastore.name
     
     file_id = var.proxmox_image_datastore.shared ? (
-      proxmox_virtual_environment_download_file.os_image[var.proxmox_nodes[0]].id
+      proxmox_download_file.os_image[var.proxmox_nodes[0]].id
     ) : (
-      proxmox_virtual_environment_download_file.os_image[var.proxmox_nodes[each.value.proxmox_host]].id
+      proxmox_download_file.os_image[var.proxmox_nodes[each.value.proxmox_host]].id
     )
 
     interface    = "virtio0"
@@ -32,16 +32,22 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
 
   network_device {
     mac_address = lookup(each.value, "mac_address", null)
-    bridge      = var.proxmox_network_bridge
+    bridge      = each.value.network_bridge
   }
 
+  operating_system { type = "l26" }
+
   initialization {
-    datastore_id = var.proxmox_image_datastore.name
+    #datastore_id = var.proxmox_image_datastore.name
+    datastore_id = var.proxmox_vms_datastore.name
+    interface    = "scsi1"
+    upgrade = false
 
     # MODIFICATION: Only use the snippet if the flavor is single-node/k3s
     user_data_file_id = var.deployment_flavor == "single-node" ? (
       proxmox_virtual_environment_file.k3s_cloud_config[each.key].id
     ) : null
+    vendor_data_file_id = proxmox_virtual_environment_file.ubuntu_qemu_guest_agent.id
 
     ip_config {
       ipv4 {
@@ -54,8 +60,10 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     }
 
     user_account {
-      username = var.vm_user
-      keys     = [trimspace(file(var.ssh_key_path))]
+      username = each.value.vm_user
+      password = each.value.vm_password
+      #keys     = [trimspace(file(each.value.ssh_key_path))]
+      keys     = [trimspace(file(pathexpand(each.value.ssh_key_path)))]
     }
   }
 }

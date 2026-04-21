@@ -1,4 +1,4 @@
-resource "proxmox_virtual_environment_download_file" "os_image" {
+resource "proxmox_download_file" "os_image" {
   # Logic: If datastore.shared is true, loop once. If false, loop per node used.
   for_each = var.proxmox_image_datastore.shared ? toset([var.proxmox_nodes[0]]) : toset(var.proxmox_nodes)
   content_type = "iso"
@@ -6,6 +6,11 @@ resource "proxmox_virtual_environment_download_file" "os_image" {
   node_name    = each.value
   url          = var.cloud_image_url
   file_name    = var.proxmox_image_filename
+  
+  #To avoid delete it
+  lifecycle {
+      prevent_destroy = true
+  }
 }
 
 resource "proxmox_virtual_environment_file" "k3s_cloud_config" {
@@ -29,5 +34,24 @@ resource "proxmox_virtual_environment_file" "k3s_cloud_config" {
     })
     # This names the file on the Proxmox storage (e.g., k3s-init-educates-01.yaml)
     file_name = "k3s-init-${each.key}.yaml"
+  }
+}
+
+resource "proxmox_virtual_environment_file" "ubuntu_qemu_guest_agent" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "proxmox-server"
+
+  source_raw {
+    data = <<EOF
+#cloud-config
+ssh_pwauth: true  # <--- This allows password login via SSH
+runcmd:
+  - apt-get update
+  - apt-get install -y qemu-guest-agent
+  - systemctl enable qemu-guest-agent
+  - systemctl start qemu-guest-agent
+EOF
+    file_name = "ubuntu-qemu-install.yaml"
   }
 }

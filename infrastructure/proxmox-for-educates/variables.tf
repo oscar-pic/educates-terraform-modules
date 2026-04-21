@@ -64,28 +64,6 @@ variable "proxmox_image_filename" {
   default     = "ubuntu-24.04-cloud.img"
 }
 
-variable "proxmox_network_bridge" { 
-  type    = string
-  default = "vmbr0" 
-}
-
-variable "vm_user" {
-  type    = string
-  default = "ubuntu" # Standard for the Ubuntu image we are using
-}
-
-variable "vm_password" {
-  description = "Contraseña para el usuario 'ubuntu' en las VMs"
-  type        = string
-  sensitive   = true # Prevents it from being displayed in plain text in the terminal/logs 
-}
-
-variable "ssh_key_path" {
-  description = "Local path to the SSH public key to inject into the VMs"
-  type        = string
-  default     = "~/.ssh/id_ed25519.pub"
-}
-
 variable "portal_domain" {
   type    = string
   default = "educates.lab.inet"
@@ -100,9 +78,13 @@ variable "kube_nodes" {
     ip_address     = string
     gateway        = string
     dns_servers    = optional(list(string), ["8.8.8.8, 1.1.1.1"]) # Default if not specified
+    vm_user        = optional(string, "ubuntu")           # Default here
+    vm_password    = optional(string, "Ubuntu1!") # Default here
+    ssh_key_path   = optional(string, "~/.ssh/id_ed25519.pub") # Default here
     vm_cores       = optional(number, 4)
     vm_memory      = optional(number, 8192)
     vm_disk_size   = optional(number, 30)
+    network_bridge = optional(string, "vmbr0")
     config_patches = optional(list(string), [])
   }))
 }
