@@ -50,3 +50,4 @@ terraform.rc
 
 # Ignore environment files
 .envrc
+.DS_Store
