@@ -1,4 +1,4 @@
-resource "null_resource" "wait_for_k3s" {
+resource "null_resource" "wait_for_k8s" {
   # We loop this resource just like we did with the VM
   for_each = var.kube_nodes
 

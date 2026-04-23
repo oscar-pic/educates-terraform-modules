@@ -43,3 +43,7 @@ kube_nodes = {
     ]
   }
 }
+
+kapp_controller_version = "v0.59.7"
+educates_version        = "3.7.1"
+educates_portal_domain  = "educates.lab.inet"

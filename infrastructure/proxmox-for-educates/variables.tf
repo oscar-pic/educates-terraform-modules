@@ -64,9 +64,10 @@ variable "proxmox_image_filename" {
   default     = "ubuntu-24.04-cloud.img"
 }
 
-variable "portal_domain" {
-  type    = string
-  default = "educates.lab.inet"
+variable "k8s_api_endpoint_vip" {
+  description = "Optional VIP/LB IP. If empty, the code picks a control-plane node."
+  type        = string
+  default     = ""
 }
 
 variable "kube_nodes" {
@@ -89,7 +90,20 @@ variable "kube_nodes" {
   }))
 }
 
+variable "kapp_controller_version" {
+  description = "Version of kapp-controller to install"
+  type        = string
+  default     = "v0.59.7"
+}
+
 variable "educates_version" {
-  type    = string
-  default = "latest"
+  description = "Version of Educates training platform to install"
+  type        = string
+  default     = "3.7.1"
+}
+
+variable "educates_portal_domain" {
+  description = "The base domain for Educates (e.g., lab.inet)"
+  type        = string
+  default = "educates.lab.inet"
 }
