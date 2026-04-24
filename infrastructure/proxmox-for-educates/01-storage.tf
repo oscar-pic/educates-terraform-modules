@@ -7,9 +7,13 @@ resource "proxmox_download_file" "os_image" {
   url          = var.cloud_image_url
   file_name    = var.proxmox_image_filename
   
-  #To avoid delete it
+# This prevents the error if the file is already there
+  overwrite = false 
+  
   lifecycle {
-      prevent_destroy = true
+    prevent_destroy = false
+    # If the file is there, just trust it's the right one
+    ignore_changes = [url] 
   }
 }
 

@@ -51,3 +51,7 @@ terraform.rc
 # Ignore environment files
 .envrc
 .DS_Store
+
+# Kubernetes dynamic configuration
+**/k8s_config.yaml
+**/k8s_config.tmp
