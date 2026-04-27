@@ -35,3 +35,20 @@ data "local_file" "kubeconfig" {
   depends_on = [null_resource.wait_for_k8s]
   filename   = "${path.module}/k8s_config.yaml"
 }
+
+###############################################################################
+# MAINTENANCE: REBOOT IF REQUIRED
+###############################################################################
+
+# This resource triggers a safe reboot if Ubuntu updates requires it.
+resource "null_resource" "reboot_node" {
+  # This must run AFTER the cluster is verified and ready
+  depends_on = [null_resource.wait_for_k8s]
+
+  for_each = var.kube_nodes
+
+  provisioner "local-exec" {
+    # Using the same variable structure as your wait_for_k8s provisioner
+    command = "bash ${path.module}/scripts/reboot_if_required.sh ${var.ssh_private_key_path} ${each.value.vm_user} ${split("/", each.value.ip_address)[0]}"
+  }
+}
