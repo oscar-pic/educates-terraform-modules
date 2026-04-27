@@ -27,6 +27,9 @@ resource "kubectl_manifest" "kapp_controller" {
   for_each  = data.kubectl_file_documents.kapp_controller.manifests
   yaml_body = each.value
   depends_on = [null_resource.wait_for_k8s]
+
+  wait_for_rollout = true  # Wait for pod to be Ready to continue
+  force_new        = true   # If there are conflicts, recreate the resource forcefully
 }
 
 # --- EDUCATES RESOURCES ---
@@ -39,15 +42,20 @@ resource "kubernetes_namespace_v1" "educates_installer" {
   depends_on = [null_resource.wait_for_k8s]
 }
 
-#data "kubernetes_namespace_v1" "educates_ui" {
-resource "kubernetes_namespace_v1" "educates_ui" {
+resource "null_resource" "wait_for_educates_ui_ns" {
+  provisioner "local-exec" {
+    command = "bash ${path.module}/wait_for_educates_ui_ns.sh ${path.module}/k8s_config.yaml educates-ui"
+  }
+  depends_on = [kubectl_manifest.training_portal]
+}
+
+# 2. Leemos el namespace una vez que sabemos que existe
+data "kubernetes_namespace_v1" "educates_ui" {
+#resource "kubernetes_namespace_v1" "educates_ui" {
   metadata {
     name = "educates-ui"
-    labels = {
-      "training.educates.dev/component" = "portal"
-      "training.educates.dev/portal"    = "educates" # El nombre de tu TrainingPortal
-    }
   }
+  depends_on = [null_resource.wait_for_educates_ui_ns]
 }
 
 # 2. Secreto TLS
@@ -55,8 +63,8 @@ resource "kubernetes_secret_v1" "educates_tls" {
   metadata {
     name      = "educates-wildcard-certs"
     #namespace = "educates-ui"
-    #namespace = data.kubernetes_namespace_v1.educates_ui.metadata[0].name
-    namespace = resource.kubernetes_namespace_v1.educates_ui.metadata[0].name
+    namespace = data.kubernetes_namespace_v1.educates_ui.metadata[0].name
+    #namespace = resource.kubernetes_namespace_v1.educates_ui.metadata[0].name
   }
   type = "kubernetes.io/tls"
   data = {
@@ -86,8 +94,8 @@ resource "kubernetes_secret_v1" "educates_installer_config" {
               namespace: educates
             # Inyectamos el dominio aquí para que el session-manager 
             # no use el valor por defecto de la imagen
-            sessionManager:
-              enabled: true
+            # sessionManager:
+            #   enabled: true
               # env:
               #   - name: INGRESS_DOMAIN
               #     value: ${var.educates_portal_domain}
@@ -222,22 +230,80 @@ resource "null_resource" "wait_for_educates_crds" {
 }
 
 # 8. El Portal de Entrenamiento (El destino final)
+# resource "kubectl_manifest" "training_portal" {
+#   yaml_body = yamlencode({
+#     apiVersion = "training.educates.dev/v1beta1"
+#     kind       = "TrainingPortal"
+#     metadata = {
+#       name      = "educates"
+#       namespace = "educates-ui"
+#     }
+#     spec = {
+#       portal = {
+#         title = "My Proxmox Lab"
+        
+#         ingress = {
+#           hostname = "${var.educates_portal_hostname}.${var.educates_portal_domain}"
+#           tlsCertificateRef = {
+#             #name = kubernetes_secret_v1.educates_tls.metadata[0].name
+#             name = "educates-wildcard-certs"
+#           }
+#         }
+
+#         cookies = {
+#           domain = var.educates_portal_domain
+#         }
+
+#         registration = {
+#           type = "anonymous"
+#         }
+
+#         credentials = {
+#           robot = {
+#             username = "robot"
+#             password = "educates-robot-password"
+#           }
+#         }
+
+#         clients = {
+#           robot = {
+#             id = "robot"
+#           }
+#         }
+#       }
+#       workshops = []
+#     }
+#   })
+
+#   server_side_apply = true
+#   force_conflicts   = true
+#   wait_for_rollout  = true
+
+#   depends_on = [
+#     null_resource.wait_for_educates_crds,
+#     kubernetes_secret_v1.educates_tls,
+#     kubernetes_namespace_v1.educates_ui
+#     #kubectl_manifest.educates_installer_app
+#   ]
+# }
+
 resource "kubectl_manifest" "training_portal" {
   yaml_body = yamlencode({
     apiVersion = "training.educates.dev/v1beta1"
     kind       = "TrainingPortal"
     metadata = {
-      name      = "educates"
-      namespace = "educates-ui"
+      name = "educates"
+      # Quitamos el namespace de aquí para evitar que Terraform intente 
+      # validarlo antes de que el operador lo cree.
     }
     spec = {
       portal = {
         title = "My Proxmox Lab"
         
         ingress = {
+          # Usamos el FQDN completo como tenías en la versión que funcionaba
           hostname = "${var.educates_portal_hostname}.${var.educates_portal_domain}"
           tlsCertificateRef = {
-            #name = kubernetes_secret_v1.educates_tls.metadata[0].name
             name = "educates-wildcard-certs"
           }
         }
@@ -269,12 +335,12 @@ resource "kubectl_manifest" "training_portal" {
 
   server_side_apply = true
   force_conflicts   = true
-  wait_for_rollout  = true
+  
+  # Importante: wait_for_rollout false para que no bloquee 
+  # la creación del secreto TLS que viene después
+  wait_for_rollout  = false
 
   depends_on = [
-    null_resource.wait_for_educates_crds,
-    kubernetes_secret_v1.educates_tls,
-    kubernetes_namespace_v1.educates_ui
-    #kubectl_manifest.educates_installer_app
+    null_resource.wait_for_educates_crds
   ]
 }

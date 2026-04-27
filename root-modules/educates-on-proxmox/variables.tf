@@ -89,3 +89,27 @@ variable "kube_nodes" {
     config_patches = optional(list(string), [])
   }))
 }
+
+variable "kapp_controller_version" {
+  description = "Version of kapp-controller to install"
+  type        = string
+  default     = "v0.59.7"
+}
+
+variable "educates_version" {
+  description = "Version of Educates training platform to install"
+  type        = string
+  default     = "3.7.1"
+}
+
+variable "educates_portal_domain" {
+  description = "The base domain for Educates (e.g., lab.inet)"
+  type        = string
+  default = "educates.lab.inet"
+}
+
+variable "educates_portal_hostname" {
+  type        = string
+  description = "Subdominio específico para el portal (ej: educates)"
+  default     = "educates"
+}

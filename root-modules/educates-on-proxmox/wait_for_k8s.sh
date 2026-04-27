@@ -6,8 +6,8 @@ USER=$2
 IP=$3
 CONFIG=$4
 
-# LIMPIEZA PREVENTIVA: Borramos cualquier rastro del config anterior
-# para forzar a que el nuevo SCP sea el que mande.
+# CLEANUP PREVENTIVE: Deleting any trace of the previous config
+# to force the new SCP to be the one that takes precedence.
 rm -f "$CONFIG"
 
 # 1. Fetch and patch
@@ -22,13 +22,13 @@ MAX_RETRIES=30
 COUNT=0
 
 while true; do
-  # Contamos cuántos pods hay en total
+  # Counting the total number of pods
   TOTAL_PODS=$(KUBECONFIG="$CONFIG" kubectl get pods -n kube-system --no-headers 2>/dev/null | wc -l)
   
-  # Contamos cuántos pods NO están en Running o Completed
+  # Counting the number of pods that are not in Running or Completed state
   NOT_READY=$(KUBECONFIG="$CONFIG" kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -vE "Running|Completed" | wc -l)
 
-  # Lógica: Debe haber al menos 1 pod Y 0 pods que no estén listos
+  # Logic: There must be at least 1 pod AND 0 pods that are not ready
   if [ "$TOTAL_PODS" -gt 0 ] && [ "$NOT_READY" -eq 0 ]; then
     echo "🚀 System pods are RUNNING ($TOTAL_PODS pods detected)!"
     break
