@@ -107,3 +107,9 @@ variable "educates_portal_domain" {
   type        = string
   default = "educates.lab.inet"
 }
+
+variable "educates_portal_hostname" {
+  type        = string
+  description = "Subdominio específico para el portal (ej: educates)"
+  default     = "educates"
+}

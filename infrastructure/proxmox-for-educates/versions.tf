@@ -63,7 +63,7 @@ locals {
 
 provider "kubernetes" {
   host     = "https://${local.k8s_api_endpoint}:6443"
-  # insecure = true
+  #insecure = true
   # This tells Terraform: "If the file isn't there yet, don't crash."
   # config_path = fileexists("${path.module}/k8s_config.yaml") ? "${path.module}/k8s_config.yaml" : null
   cluster_ca_certificate = base64decode(yamldecode(data.local_file.kubeconfig.content).clusters[0].cluster.certificate-authority-data)

@@ -39,11 +39,24 @@ resource "kubernetes_namespace_v1" "educates_installer" {
   depends_on = [null_resource.wait_for_k8s]
 }
 
+#data "kubernetes_namespace_v1" "educates_ui" {
+resource "kubernetes_namespace_v1" "educates_ui" {
+  metadata {
+    name = "educates-ui"
+    labels = {
+      "training.educates.dev/component" = "portal"
+      "training.educates.dev/portal"    = "educates" # El nombre de tu TrainingPortal
+    }
+  }
+}
+
 # 2. Secreto TLS
 resource "kubernetes_secret_v1" "educates_tls" {
   metadata {
-    name      = "educates-tls"
-    namespace = kubernetes_namespace_v1.educates_installer.metadata[0].name
+    name      = "educates-wildcard-certs"
+    #namespace = "educates-ui"
+    #namespace = data.kubernetes_namespace_v1.educates_ui.metadata[0].name
+    namespace = resource.kubernetes_namespace_v1.educates_ui.metadata[0].name
   }
   type = "kubernetes.io/tls"
   data = {
@@ -53,13 +66,13 @@ resource "kubernetes_secret_v1" "educates_tls" {
 }
 
 # 3. Configuración del Instalador
-resource "kubernetes_secret_v1" "educates_config" {
+resource "kubernetes_secret_v1" "educates_installer_config" {
   metadata {
     name      = "educates-installer-config"
     namespace = kubernetes_namespace_v1.educates_installer.metadata[0].name
   }
   data = {
-    "values.yml" = <<-EOT
+    "values.yaml" = <<-EOT
       #!data/values
       ---
       clusterInfrastructure:
@@ -71,6 +84,15 @@ resource "kubernetes_secret_v1" "educates_config" {
             imageRegistry:
               host: ghcr.io
               namespace: educates
+            # Inyectamos el dominio aquí para que el session-manager 
+            # no use el valor por defecto de la imagen
+            sessionManager:
+              enabled: true
+              # env:
+              #   - name: INGRESS_DOMAIN
+              #     value: ${var.educates_portal_domain}
+              #   - name: INGRESS_PROTOCOL
+              #     value: https
         kyverno:
           enabled: true
       clusterIngress:
@@ -83,6 +105,36 @@ resource "kubernetes_secret_v1" "educates_config" {
     EOT
   }
 }
+# resource "kubernetes_secret_v1" "educates_installer_config" {
+#   metadata {
+#     name      = "educates-installer-config"
+#     namespace = kubernetes_namespace_v1.educates_installer.metadata[0].name
+#   }
+#   data = {
+#     "values.yml" = <<-EOT
+#       #!data/values
+#       ---
+#       clusterInfrastructure:
+#         provider: custom
+#       clusterPackages:
+#         educates:
+#           enabled: true
+#           settings:
+#             imageRegistry:
+#               host: ghcr.io
+#               namespace: educates
+#         kyverno:
+#           enabled: true
+#       clusterIngress:
+#         domain: ${var.educates_portal_domain} 
+#         class: traefik
+#       clusterStorage:
+#         class: local-path
+#       clusterRuntime:
+#         class: default
+#     EOT
+#   }
+# }
 
 # 4. ServiceAccount para el Instalador
 resource "kubernetes_service_account_v1" "educates_installer" {
@@ -106,6 +158,14 @@ resource "kubernetes_cluster_role_binding_v1" "educates_installer_admin" {
     kind      = "ServiceAccount"
     name      = kubernetes_service_account_v1.educates_installer.metadata[0].name
     namespace = kubernetes_namespace_v1.educates_installer.metadata[0].name
+  }
+}
+
+resource "null_resource" "wait_for_kapp_controller" {
+  depends_on = [kubectl_manifest.kapp_controller] # O el recurso que instala Carvel
+
+  provisioner "local-exec" {
+    command = "bash ${path.module}/wait_for_kapp.sh ${path.module}/k8s_config.yaml"
   }
 }
 
@@ -140,15 +200,25 @@ resource "kubectl_manifest" "educates_installer_app" {
   
   # Depende del Secreto y del ServiceAccount con permisos
   depends_on = [
-    kubernetes_secret_v1.educates_config,
+    null_resource.wait_for_kapp_controller,
+    kubernetes_secret_v1.educates_installer_config,
     kubernetes_cluster_role_binding_v1.educates_installer_admin
   ]
 }
 
 # 7. Pausa para que el Operador registre los CRDs
-resource "time_sleep" "wait_for_crds" {
-  create_duration = "2m"
-  depends_on      = [kubectl_manifest.educates_installer_app]
+# resource "time_sleep" "wait_for_educates_crds" {
+#   create_duration = "5m"
+#   depends_on      = [kubectl_manifest.educates_installer_app]
+# }
+
+resource "null_resource" "wait_for_educates_crds" {
+  # IMPORTANTE: Depende del instalador que lanza Carvel
+  depends_on = [kubectl_manifest.educates_installer_app] 
+
+  provisioner "local-exec" {
+    command = "bash ${path.module}/wait_for_educates_crds.sh ${path.module}/k8s_config.yaml"
+  }
 }
 
 # 8. El Portal de Entrenamiento (El destino final)
@@ -157,16 +227,18 @@ resource "kubectl_manifest" "training_portal" {
     apiVersion = "training.educates.dev/v1beta1"
     kind       = "TrainingPortal"
     metadata = {
-      name = "educates"
+      name      = "educates"
+      namespace = "educates-ui"
     }
     spec = {
       portal = {
         title = "My Proxmox Lab"
         
         ingress = {
-          hostname = "educates.${var.educates_portal_domain}"
+          hostname = "${var.educates_portal_hostname}.${var.educates_portal_domain}"
           tlsCertificateRef = {
-            name = "educates-tls-certs"
+            #name = kubernetes_secret_v1.educates_tls.metadata[0].name
+            name = "educates-wildcard-certs"
           }
         }
 
@@ -200,7 +272,9 @@ resource "kubectl_manifest" "training_portal" {
   wait_for_rollout  = true
 
   depends_on = [
-    time_sleep.wait_for_crds,
-    kubectl_manifest.educates_installer_app
+    null_resource.wait_for_educates_crds,
+    kubernetes_secret_v1.educates_tls,
+    kubernetes_namespace_v1.educates_ui
+    #kubectl_manifest.educates_installer_app
   ]
 }
