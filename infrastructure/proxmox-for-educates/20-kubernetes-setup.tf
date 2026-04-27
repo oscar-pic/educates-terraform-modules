@@ -26,7 +26,7 @@ resource "null_resource" "wait_for_k8s" {
   }
   # Pull and localize the config
   provisioner "local-exec" {
-    command = "bash ${path.module}/wait_for_k8s.sh ${var.ssh_private_key_path} ${each.value.vm_user} ${local.k8s_api_endpoint} ${path.module}/k8s_config.yaml"
+    command = "bash ${path.module}/scripts/wait_for_k8s.sh ${var.ssh_private_key_path} ${each.value.vm_user} ${local.k8s_api_endpoint} ${path.module}/k8s_config.yaml"
   }
 }
 
