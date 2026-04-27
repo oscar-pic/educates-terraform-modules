@@ -41,7 +41,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     #datastore_id = var.proxmox_image_datastore.name
     datastore_id = var.proxmox_vms_datastore.name
     interface    = "scsi1"
-    upgrade = false
+    upgrade = true
 
     # Always use the flavor-aware snippet for Ubuntu/Debian nodes
     # (Unless it's Talos, which you'd handle at the resource/dynamic block level)
