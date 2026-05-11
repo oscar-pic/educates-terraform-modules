@@ -1,8 +1,8 @@
 resource "proxmox_download_file" "os_image" {
   # Logic: If datastore.shared is true, loop once. If false, loop per node used.
-  for_each = var.proxmox_image_datastore.shared ? toset([var.proxmox_nodes[0]]) : toset(var.proxmox_nodes)
+  for_each = var.proxmox_images_snippets_datastore.shared ? toset([var.proxmox_nodes[0]]) : toset(var.proxmox_nodes)
   content_type = "iso"
-  datastore_id = var.proxmox_image_datastore.name # Use the 'name' property
+  datastore_id = var.proxmox_images_snippets_datastore.name # Use the 'name' property
   node_name    = each.value
   url          = var.cloud_image_url
   file_name    = var.proxmox_image_filename
@@ -22,10 +22,10 @@ resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
   # If it's single-node (k3s), we create snippets for the nodes.
   for_each = var.deployment_flavor == "single-node" ? var.kube_nodes : {}
   content_type = "snippets"
-  datastore_id = var.proxmox_image_datastore.name
+  datastore_id = var.proxmox_images_snippets_datastore.name
   # Logic: If your storage is shared, we upload via the first node.
   # If it is local, we upload to the specific node where the VM will live.
-  node_name = var.proxmox_image_datastore.shared ? (
+  node_name = var.proxmox_images_snippets_datastore.shared ? (
     var.proxmox_nodes[0]
   ) : (
     var.proxmox_nodes[each.value.proxmox_host]

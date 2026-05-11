@@ -28,7 +28,7 @@ variable "ssh_private_key_path" {
   default     = "~/.ssh/id_ed25519"
 }
 
-variable "proxmox_image_datastore" {
+variable "proxmox_images_snippets_datastore" {
   description = "Storage for ISOs and Snippets (ej: local)"
   type = object({
     name   = string

@@ -18,7 +18,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
   disk {
     datastore_id = var.proxmox_vms_datastore.name
     
-    file_id = var.proxmox_image_datastore.shared ? (
+    file_id = var.proxmox_images_snippets_datastore.shared ? (
       proxmox_download_file.os_image[var.proxmox_nodes[0]].id
     ) : (
       proxmox_download_file.os_image[var.proxmox_nodes[each.value.proxmox_host]].id
@@ -38,7 +38,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
   operating_system { type = "l26" }
 
   initialization {
-    #datastore_id = var.proxmox_image_datastore.name
+    #datastore_id = var.proxmox_images_snippets_datastore.name
     datastore_id = var.proxmox_vms_datastore.name
     interface    = "scsi1"
     upgrade = true
