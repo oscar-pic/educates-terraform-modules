@@ -36,7 +36,7 @@ provider "proxmox" {
 locals {
   # Logic: Use override if set, otherwise pull the IP from the specific node key
   nodes_list       = values(var.kube_nodes)
-  # This line now takes "192.168.1.29/24" and results in "192.168.1.29"
+  # This line now takes "192.168.1.29/24" and results in "192.168.1.29, for example"
   raw_endpoint     = var.k8s_api_endpoint_vip != "" ? var.k8s_api_endpoint_vip : local.nodes_list[0].ip_address
   k8s_api_endpoint = split("/", local.raw_endpoint)[0]
 }
