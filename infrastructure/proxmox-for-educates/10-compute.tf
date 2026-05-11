@@ -67,4 +67,5 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
       keys     = [trimspace(file(pathexpand(each.value.ssh_key_path)))]
     }
   }
+  depends_on = [proxmox_virtual_environment_file.ubuntu_flavor_config]
 }
