@@ -18,6 +18,16 @@ terraform {
       source  = "hashicorp/null"
       version = "~> 3.2.0"
     }
+    # Pause Multiplatform
+    time = {
+      source  = "hashicorp/time"
+      version = ">= 0.14.0"
+    }
+    # To read files by SSH without local commands
+    ssh = {
+      source  = "loafoe/ssh"
+      version = ">= 2.7.0"
+    }
   }
 }
 
@@ -26,9 +36,15 @@ provider "proxmox" {
   api_token = var.proxmox_api_token
   insecure  = true # Set to false if you have valid SSL certs for Proxmox
   ssh {
+    # Block to configure SSH access for Proxmox provider when needed (e.g., for file uploads, snippets or remote execution)
+    # If snippets datasotre is local, provider will force to use SSH to upload files. 
+    # If it's shared, it's recommended to use an NFS datastore and this ssh block can be commented out.
     agent       = false # Explicitly off
     username    = "root"
     private_key = file(var.ssh_private_key_path) # This is the "Key" (pun intended)
+    # Force the provider to bypass the Proxmox API and resolve proxmox nodes by local DNS. 
+    # It's to avoid that Proxmox API choose an incorrect IP for Proxmox node.
+    node_address_source = "dns"
   }
 }
 
