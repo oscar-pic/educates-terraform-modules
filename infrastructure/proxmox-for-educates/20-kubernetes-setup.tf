@@ -37,7 +37,7 @@ resource "null_resource" "wait_for_k8s" {
       "  TOTAL_PODS=$(KUBECONFIG=/tmp/k3s_external.yaml /usr/local/bin/kubectl get pods -n kube-system --no-headers 2>/dev/null | wc -l)",
       "  NOT_READY=$(KUBECONFIG=/tmp/k3s_external.yaml /usr/local/bin/kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -vE 'Running|Completed' | wc -l)",
       "  if [ \"$TOTAL_PODS\" -gt 0 ] && [ \"$NOT_READY\" -eq 0 ]; then",
-      "    echo '🚀 System pods are RUNNING ($TOTAL_PODS pods detected)!';",
+      "    echo \"🚀 System pods are RUNNING ($TOTAL_PODS pods detected)!\";",
       "    break;",
       "  fi",
       "  echo \"Status: Total=$TOTAL_PODS, Waiting=$NOT_READY... retrying in 10s ($((COUNT+1))/$MAX_RETRIES)\"",

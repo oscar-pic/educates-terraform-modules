@@ -30,9 +30,3 @@ NEXT STEPS (MANUAL):
 EOT
   description = "Summary of the infrastructure and instructions for next steps."
 }
-
-# Separate output for easy copy-pasting of the CLI command
-output "educates_cli_template" {
-  value       = "educates cluster create --kubeconfig ./k8s_config.yaml --domain <your-domain.com>"
-  description = "Template command for the Educates CLI installation."
-}

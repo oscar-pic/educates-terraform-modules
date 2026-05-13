@@ -1,22 +1,22 @@
 terraform {
   # Minimum Terraform version required
-  required_version = ">= 1.14.8"
+  required_version = ">= 1.15.2"
 
   required_providers {
     # Proxmox provider for VM orchestration
     proxmox = {
       source  = "bpg/proxmox"
-      version = ">= 0.102.0"
+      version = ">= 0.106.0"
     }
     # Local provider to manage the kubeconfig file on the host machine
     local = {
       source  = "hashicorp/local"
-      version = ">= 2.8.0"
+      version = ">= 2.9.0"
     }
     # Null provider for executing the K8s wait scripts (local-exec)
     null = {
       source  = "hashicorp/null"
-      version = "~> 3.2.0"
+      version = "~> 3.2.4"
     }
     # Pause Multiplatform
     time = {
