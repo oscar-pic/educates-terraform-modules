@@ -11,16 +11,19 @@ proxmox_images_snippets_datastore = {
   shared = false
 }
 proxmox_vms_datastore    = {
-  name = "data-vms"
+  name   = "data-vms"
   shared = false
 }
 
 cloud_image_url        = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 proxmox_image_filename = "ubuntu-24.04-cloud.img"
 
-# SSH Paths
-ssh_key_path         = "~/.ssh/id_ed25519.pub"
+# SSH Path to connect to Proxmox nodes and to inject into the VMs.
 ssh_private_key_path = "~/.ssh/id_ed25519"
+
+# Leave this empty for single-node; 
+# Fill it only when you move to a multi-node cluster with a VIP.
+k8s_api_endpoint_vip = ""
 
 # Your Single-Node Definition
 kube_nodes = {
