@@ -1,9 +1,9 @@
 variable "deployment_flavor" {
   type        = string
-  description = "The type of deployment: 'single-node', 'rke2-cluster', or 'talos-cluster'"
+  description = "The type of deployment: 'single-node-k3s', 'rke2-cluster', or 'talos-cluster'"
   validation {
-    condition     = contains(["single-node", "rke2-cluster", "talos-cluster"], var.deployment_flavor)
-    error_message = "Flavor must be one of: single-node, rke2-cluster, talos-cluster."
+    condition     = contains(["single-node-k3s", "rke2-cluster", "talos-cluster"], var.deployment_flavor)
+    error_message = "Flavor must be one of: single-node-k3s, rke2-cluster, talos-cluster."
   }
 }
 
@@ -47,8 +47,8 @@ variable "proxmox_vms_datastore" {
     shared = bool
   })
   validation {
-    # If flavor is NOT single-node, shared MUST be true.
-    condition     = var.deployment_flavor == "single-node" || var.proxmox_vms_datastore.shared == true
+    # If flavor is NOT single-node-k3s, shared MUST be true.
+    condition     = var.deployment_flavor == "single-node-k3s" || var.proxmox_vms_datastore.shared == true
     error_message = "CRITICAL: For cluster deployments, the VM datastore MUST be shared (NFS/Ceph) to ensure HA and data persistence across nodes."
   }
 }

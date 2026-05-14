@@ -33,7 +33,7 @@ runcmd:
     echo "Flavor check: ${deployment_flavor}"
 
     # --- K3S SINGLE NODE ---
-    %{ if deployment_flavor == "single-node" ~}
+    %{ if deployment_flavor == "single-node-k3s" ~}
     echo "Installing K3s..."
     until curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644" sh -; do
       echo "K3s download failed, retrying..."

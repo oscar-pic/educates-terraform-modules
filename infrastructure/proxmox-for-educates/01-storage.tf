@@ -20,8 +20,8 @@ resource "proxmox_download_file" "os_image" {
 
 resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
   # Logic: If flavor is Talos, we create 0 snippets.
-  # If it's single-node (k3s), we create snippets for the nodes.
-  for_each = var.deployment_flavor == "single-node" ? var.kube_nodes : {}
+  # If it's single-node-k3s, we create snippets for the nodes.
+  for_each = var.deployment_flavor == "single-node-k3s" ? var.kube_nodes : {}
   content_type = "snippets"
   # It's recommended to use a shared NFS datastore for snippets, if not, SSH connection will be used to upload the file to the specific node.
   # If you want to avoid SSH, use a shared datastore and comment out the ssh block in the provider configuration.
