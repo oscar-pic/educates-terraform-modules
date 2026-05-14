@@ -101,12 +101,14 @@ resource "null_resource" "reboot_node" {
       "if [ -f /var/run/reboot-required ]; then",
       "  echo '⚠️  System restart IS required. Initiating reboot now...';",
       # Reboot with a 1m delay in order to SSH connection close correctly with exit code 0
-      "  sudo shutdown -r +1 'Terraform OS Update Reboot' &",
+      "  sudo shutdown -r +1 'Terraform OS Update Reboot' <&- >/dev/null 2>&1 &",
+      "  sudo sh -c 'echo scheduled > /tmp/terraform-reboot-scheduled';",
       "  echo '⏳ Reboot scheduled. Safe exit from current SSH session...';",
       "else",
-      "  echo '   No reboot required for this node. Skipping.';",
+      "  echo '✅ No reboot required for this node. Skipping.';",
       "fi",
-      "echo '------------------------------------------------------------'"
+      "echo '------------------------------------------------------------'",
+      "sleep 1" # To give time to background process could be initiated before Terraform ends
     ]
   }
 }
@@ -116,7 +118,7 @@ resource "time_sleep" "wait_for_reboot_cycle" {
   depends_on = [null_resource.reboot_node]
 
   # Internal Terraform pause. Independent of Windows, Linux or Mac.
-  create_duration = "70s"
+  create_duration = "90s"
 }
 
 resource "null_resource" "verify_node_online" {
