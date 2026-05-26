@@ -35,6 +35,15 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     bridge      = each.value.network_bridge
   }
 
+  dynamic "network_device" {
+  # If ceph_ip_address is not empty, we create 1 element; if it is empty, 0.
+  for_each = each.value.ceph_ip_address != "" ? [1] : []
+  content {
+    bridge = each.value.ceph_bridge
+    #mtu   = 9000
+  }
+}
+
   operating_system { type = "l26" }
 
   initialization {
@@ -42,6 +51,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     datastore_id = var.proxmox_vms_datastore.name
     interface    = "scsi1"
     upgrade = true
+    #upgrade = false
 
     # Always use the flavor-aware snippet for Ubuntu/Debian nodes
     # (Unless it's Talos, which you'd handle at the resource/dynamic block level)
@@ -58,6 +68,16 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     }
     dns {
       servers = each.value.dns_servers
+    }
+
+    # Dynamically add the secondary IP only if the variable is not empty
+    dynamic "ip_config" {
+      for_each = each.value.ceph_ip_address != "" ? [each.value.ceph_ip_address] : []
+      content {
+        ipv4 {
+          address = ip_config.value
+        }
+      }
     }
 
     user_account {

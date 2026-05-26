@@ -21,7 +21,8 @@ resource "proxmox_download_file" "os_image" {
 resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
   # Logic: If flavor is Talos, we create 0 snippets.
   # If it's single-node-k3s, we create snippets for the nodes.
-  for_each = var.deployment_flavor == "single-node-k3s" ? var.kube_nodes : {}
+  #for_each = var.deployment_flavor == "single-node-k3s" ? var.kube_nodes : {}
+  for_each = contains(["single-node-k3s", "rke2-cluster"], var.deployment_flavor) ? var.kube_nodes : {}
   content_type = "snippets"
   # It's recommended to use a shared NFS datastore for snippets, if not, SSH connection will be used to upload the file to the specific node.
   # If you want to avoid SSH, use a shared datastore and comment out the ssh block in the provider configuration.
@@ -43,6 +44,7 @@ resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
       deployment_flavor = var.deployment_flavor
       # This adds 6 spaces to the start of every line in your config_patches list
       extra_configs     = join("\n      ", each.value.config_patches)
+      timezone          = var.system_timezone
     })
     # This names the file on the Proxmox storage (e.g., qemu-k3s-init-educates-01.yaml)
     file_name = "ubuntu-${var.deployment_flavor}-${each.key}.yaml"

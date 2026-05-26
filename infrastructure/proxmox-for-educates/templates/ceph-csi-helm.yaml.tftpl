@@ -1,0 +1,26 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: ceph-csi-cephfs
+  namespace: kube-system
+spec:
+  chart: ceph-csi-cephfs
+  repo: https://ceph.github.io/csi-charts
+  targetNamespace: kube-system
+  valuesContent: |
+    nodeplugin:
+      httpMetrics.enabled: false
+      nodeSelector:
+        node-role.kubernetes.io/worker: "true"
+      podAnnotations:
+        k8s.v1.cni.cncf.io/networks: kube-system/ceph-storage-net
+    provisioner:
+      replicaCount: 3
+      nodeSelector:
+        node-role.kubernetes.io/worker: "true"
+      podAnnotations:
+        k8s.v1.cni.cncf.io/networks: kube-system/ceph-storage-net
+    csiConfig:
+      - clusterID: "axlab-ceph-cluster"
+        monitors:
+${indent(10, monitors_list)}

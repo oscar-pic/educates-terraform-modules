@@ -1,0 +1,26 @@
+%{ if !is_bootstrap }
+server: "https://${registration_address}:9345"
+%{ endif }
+token: "${cluster_token}"
+
+%{ if is_server }
+tls-san:
+  - "127.0.0.1"
+  - "${vip_address}"
+%{ for ip in nodes_ips ~}
+  - "${ip}"
+%{ endfor ~}
+%{ endif }
+
+cni:
+  - multus
+  - cilium
+
+disable:
+  - rke2-canal
+disable-kube-proxy: true
+
+%{ if !is_server }
+node-label:
+  - "node-role.kubernetes.io/worker=true"
+%{ endif }

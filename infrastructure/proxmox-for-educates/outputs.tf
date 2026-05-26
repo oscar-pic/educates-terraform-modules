@@ -6,7 +6,7 @@ output "infrastructure_summary" {
   value = <<EOT
 
 ===============================================================================
-             PROXMOX + K3S BASE INFRASTRUCTURE READY
+             PROXMOX + K8S BASE INFRASTRUCTURE READY
 ===============================================================================
 
 VIRTUAL MACHINE STATUS:

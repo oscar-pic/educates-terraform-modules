@@ -34,23 +34,30 @@ Edit the `terraform.tfvars` file to match your environment:
 Once the variables are configured, run the standard Terraform workflow:
 
 1. **Initialize the directory**:
+
    ```bash
-   terraform init
+   terraform init -reconfigure
    ```
 
 2. **Preview the execution plan**:
+
    ```bash
-   terraform plan
+   terraform plan -var-file="k3s.tfvars" -out="k3s.tfplan"
+   #or
+   terraform plan -var-file="rke2.tfvars" -out="rke2.tfplan"
    ```
 
 3. **Apply the changes**:
+
    ```bash
-   terraform apply
+   terraform apply "k3s.tfplan"
+   #or
+   terraform apply "rke2.tfplan"
    ```
 
 ## Post-Installation
 
-After the deployment is complete, the virtual machines will boot and start the provisioning process via Cloud-init. 
+After the deployment is complete, the virtual machines will boot and start the provisioning process via Cloud-init.
 
 To retrieve the `kubeconfig` file and start interacting with your cluster:
 
@@ -62,7 +69,9 @@ To retrieve the `kubeconfig` file and start interacting with your cluster:
 To remove all resources created in Proxmox:
 
 ```bash
-terraform destroy
+terraform destroy -var-file="k3s.tfvars"
+#or
+terraform destroy -var-file="rke2.tfvars"
 ```
 
 ---

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ceph-csi-cephfs-config
+  namespace: kube-system
+data:
+  config.json: |-
+    [
+      {
+        "clusterID": "axlab-ceph-cluster",
+        "monitors": [
+          "192.168.60.34:6789",
+          "192.168.60.35:6789",
+          "192.168.60.36:6789"
+        ]
+      }
+    ]
