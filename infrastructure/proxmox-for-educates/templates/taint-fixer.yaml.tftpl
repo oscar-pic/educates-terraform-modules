@@ -1,0 +1,52 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: taint-fixer-sa
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: taint-fixer-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: taint-fixer-binding
+subjects:
+- kind: ServiceAccount
+  name: taint-fixer-sa
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: taint-fixer-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: adjust-control-plane-taints
+  namespace: kube-system
+spec:
+  template:
+    spec:
+      serviceAccountName: taint-fixer-sa
+      restartPolicy: OnFailure
+      containers:
+      - name: kubectl
+        image: bitnami/kubectl:latest
+        command: ["/bin/sh", "-c"]
+        args: 
+          - |
+            NODE_COUNT=$(kubectl get nodes -l node-role.kubernetes.io/control-plane=true --no-headers | wc -l)
+            if [ "$NODE_COUNT" -le 3 ]; then
+              echo "Compac Cluster ($NODE_COUNT nodes). Deleting taints..."
+              kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- --overwrite || true
+            else
+              echo "Normal Cluster ($NODE_COUNT nodes). Maintain protection."
+            fi

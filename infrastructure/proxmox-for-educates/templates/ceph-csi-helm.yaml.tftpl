@@ -9,18 +9,37 @@ spec:
   targetNamespace: kube-system
   valuesContent: |
     nodeplugin:
-      httpMetrics.enabled: false
-      nodeSelector:
-        node-role.kubernetes.io/worker: "true"
+      httpMetrics:
+        enabled: false
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/worker
+                operator: In
+                values:
+                - "true"
       podAnnotations:
         k8s.v1.cni.cncf.io/networks: kube-system/ceph-storage-net
     provisioner:
-      replicaCount: 3
-      nodeSelector:
-        node-role.kubernetes.io/worker: "true"
+      replicaCount: ${replica_count}
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/worker
+                operator: In
+                values:
+                - "true"
       podAnnotations:
         k8s.v1.cni.cncf.io/networks: kube-system/ceph-storage-net
     csiConfig:
-      - clusterID: "axlab-ceph-cluster"
+      - clusterID: "${clusterID}"
         monitors:
-${indent(10, monitors_list)}
+%{ for node in monitors_list ~}
+          - ${node}:6789
+%{ endfor ~}

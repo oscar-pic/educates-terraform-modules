@@ -17,10 +17,22 @@ variable "proxmox_api_token" {
   sensitive = true # This hides the token in your logs
 }
 
+variable "proxmox_ceph_clusterID" {
+  description = "Ceph Cluster UUID (FSID) - ceph fsid command"
+  type        = string
+  default     = ""
+}
+
 variable "proxmox_ceph_k8s_key" {
   type        = string
   description = "The Ceph client.kubernetes authentication key encoded in base64."
   sensitive   = true
+}
+
+variable "proxmox_ceph_bridge" {
+  type        = string
+  default     = "vmbr1"
+  description = "Bridge used in all Proxmox K8s VMs for Ceph Traffic"
 }
 
 variable "proxmox_ceph_storage_subnet" {
@@ -29,10 +41,18 @@ variable "proxmox_ceph_storage_subnet" {
   default     = "10.10.60.0/24"
 }
 
+variable "k8s_ceph_storage_pods_ip_range" {
+  type = object({
+    start = string
+    end   = string
+  })
+  description = "Dynamic Range for Storage Pods"
+}
+
 variable "k8s_ceph_storage_interface_name" {
   type        = string
-  description = "The physical or bridge interface name on the worker nodes"
-  default     = "eth1"
+  description = "The physical or bridge interface name on the k8s nodes"
+  default     = "ens19"
 }
 
 variable "proxmox_nodes" {
@@ -117,8 +137,6 @@ variable "kube_nodes" {
     gateway         = string
     dns_servers     = optional(list(string), ["8.8.8.8, 1.1.1.1"]) # Default if not specified
     network_bridge  = optional(string, "vmbr0")
-    ceph_ip_address = optional(string, "")
-    ceph_bridge     = optional(string, "vmbr1")
     vm_user         = optional(string, "ubuntu")           # Default here
     vm_password     = optional(string, "Ubuntu1!") # Default here
     ssh_key_path    = optional(string, "~/.ssh/id_ed25519.pub") # Default here

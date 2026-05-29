@@ -9,8 +9,11 @@ spec:
     "type": "macvlan",
     "master": "${interface_name}",
     "mode": "bridge",
+    "mtu": "${mtu}",
     "ipam": {
       "type": "host-local",
-      "subnet": "${subnet}"
+      "subnet": "${subnet}",
+      "rangeStart": "${rangeStart}",
+      "rangeEnd": "${rangeEnd}"
     }
   }'

@@ -19,9 +19,7 @@ locals {
   bootstrap_name = length(keys(local.bootstrap_node_map)) > 0 ? keys(local.bootstrap_node_map)[0] : ""
   bootstrap_ip   = local.bootstrap_name != "" ? split("/", var.kube_nodes[local.bootstrap_name].ip_address)[0] : ""
   
-  # The endpoint will be the VIP (if one was configured) or, failing that, the IP of the bootstrap node
-  # registration_address = var.k8s_api_endpoint_vip != "" ? var.k8s_api_endpoint_vip : local.bootstrap_ip
-  # CHANGED TO BOOTSTRAP SERVER ADDRESS. Sometimes kube-vip is not ready as soon as we need it in installation time
+  # The endpoint will be the bootstrap node
   registration_address = local.bootstrap_ip
 
   # Variable to generate the k8s_config.yaml correctly, in order to pass the file to the user with the correct cluster API IP.
@@ -62,27 +60,7 @@ resource "null_resource" "bootstrap_k8s" {
     destination = "/tmp/rke2-config.yaml"
   }
 
-  # 👁️ PROVISIONER 1: Sensitive Setup (Output will be suppressed by Terraform)
-  provisioner "remote-exec" {
-
-    inline = [
-      "set -e",
-      # 🛡️ SECURITY BLOCK: Wait to Cloud-Init finish the Ubuntu Upgrade
-      "echo '⏳ Checking Cloud-Init status and waiting for Ubuntu apt upgrades to finish...'",
-      "sudo cloud-init status --wait || true",
-      "echo '✅ Cloud-Init finished! OS is fully updated and unlocked.'",
-
-      "if [ '${var.deployment_flavor}' = 'rke2-cluster' ]; then",
-      # ONLY RUN if RKE2 isn't already installed/running
-      "  if systemctl is-active --quiet rke2-server; then echo '🛑 RKE2 already configured. Skipping.'; exit 0; fi",
-      "  sudo mkdir -p /etc/rancher/rke2",
-      "  sudo mv /tmp/rke2-config.yaml /etc/rancher/rke2/config.yaml",
-      "fi",
-    ]
-  }
-
-  # 👁️ PROVISIONER 2: Infrastructure Deployment & Engine Tracking (100% VISIBLE OUTPUT)
-  # 1. Upload via file provisioner
+  # Upload kube-vip config
   provisioner "file" {
     content = templatefile("${path.module}/templates/kube-vip-daemonset.yaml.tftpl", {
       vip_address   = var.k8s_api_endpoint_vip
@@ -91,6 +69,7 @@ resource "null_resource" "bootstrap_k8s" {
     destination = "/tmp/kube-vip-daemonset.yaml"
   }
 
+  # Upload Cilium config
   provisioner "file" {
     content = templatefile("${path.module}/templates/rke2-cilium-config.yaml.tftpl", {
       # If it's a single node, use 1 replica; otherwise, 3 for HA.
@@ -98,6 +77,12 @@ resource "null_resource" "bootstrap_k8s" {
       network_device    = var.k8s_api_cp_interface
     })
     destination = "/tmp/rke2-cilium-config.yaml"
+  }
+
+  # Remove taint protection on Compac Cluster
+  provisioner "file" {
+    content = templatefile("${path.module}/templates/taint-fixer.yaml.tftpl", {})
+    destination = "/tmp/taint-fixer.yaml"
   }
 
   # Upload Systemd Override
@@ -110,6 +95,11 @@ resource "null_resource" "bootstrap_k8s" {
 
     inline = [
       "set -e",
+      # 🛡️ SECURITY BLOCK: Wait to Cloud-Init finish the Ubuntu Upgrade
+      "echo '⏳ Checking Cloud-Init status and waiting for Ubuntu apt upgrades to finish...'",
+      "sudo cloud-init status --wait || true",
+      "echo '✅ Cloud-Init finished! OS is fully updated and unlocked.'",
+
       "if [ \"${var.deployment_flavor}\" = \"single-node-k3s\" ]; then",
       "  echo '⏳ Installing K3s (Single Node)...'",
       "  curl -sfL https://get.k3s.io | sh -",
@@ -118,6 +108,8 @@ resource "null_resource" "bootstrap_k8s" {
       "elif [ \"${var.deployment_flavor}\" = \"rke2-cluster\" ]; then",
          # ONLY RUN if RKE2 isn't already installed/running
       "  if systemctl is-active --quiet rke2-server; then echo '🛑 RKE2 already configured. Skipping.'; exit 0; fi",
+      "  sudo mkdir -p /etc/rancher/rke2",
+      "  sudo mv /tmp/rke2-config.yaml /etc/rancher/rke2/config.yaml",
          # 🚀 Global enforcement: No matter what happens below, this session only speaks production STABLE
       "  export INSTALL_RKE2_CHANNEL='stable'",
       "  echo '⚙️  Configuring RKE2 Bootstrap Server with custom Cilium setup...'",
@@ -134,6 +126,9 @@ resource "null_resource" "bootstrap_k8s" {
 
       "  echo '⚙️  Injecting Cilium HelmChartConfig for kube-proxy replacement...'",
       "  sudo mv /tmp/rke2-cilium-config.yaml /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml",
+
+      "  echo '⚙️  Remove taint protection on Compac Cluster with only Control Planes...'",
+      "  sudo mv /tmp/taint-fixer.yaml /var/lib/rancher/rke2/server/manifests/taint-fixer.yaml",
     
       "  echo '⏳ Installing latest production stable RKE2 Server binary...'",
       # 🚀 Force sudo on the installer pipe
@@ -154,7 +149,7 @@ resource "null_resource" "bootstrap_k8s" {
       "  sudo systemctl daemon-reload",
       "  echo '⚙️  Enabling rke2-server systemd unit...'",
       "  sudo systemctl enable rke2-server.service",
-      "  echo '⚙️  Launching rke2-server in the background (Initializing cluster + Cilium + Multus + Hubble). It will take time. Timeout to 15m...'",
+      "  echo '⚙️  Launching rke2-server in the background (Initializing cluster + Cilium + Multus). It will take time. Timeout to 15m...'",
       # 🔥 We start it and let systemd handle the bootstrap asynchronously
       "  sudo systemctl start rke2-server.service",
       "  KUBECONFIG_SOURCE=\"/etc/rancher/rke2/rke2.yaml\"",
@@ -186,20 +181,6 @@ resource "null_resource" "bootstrap_k8s" {
       "echo '🚀 Local authority file initialized. Verifying cluster engine state...'",
       "/usr/local/bin/kubectl wait --for=condition=Ready nodes --all --timeout=420s || true",
 
-      # 🚀 Explicit apply for Kube-VIP manifests to bypass RKE2 boot-directory scanning race conditions
-      "if [ ! -z \"${var.k8s_api_endpoint_vip}\" ]; then",
-      # "  echo '⚙️  Enforcing direct execution of Kube-VIP manifests...'",
-      # "  /usr/local/bin/kubectl apply -f /var/lib/rancher/rke2/server/manifests/01-kube-vip-rbac.yaml",
-      # "  /usr/local/bin/kubectl apply -f /var/lib/rancher/rke2/server/manifests/02-kube-vip-daemonset.yaml",
-
-      # "  echo '⏳ Waiting for Kube-VIP rollout status validation...'",
-      # "  /usr/local/bin/kubectl rollout status daemonset/kube-vip -n kube-system --timeout=180s || true",
-      # "  sleep 5",
-      
-      "  echo '🌐 Network routing state analysis...'",
-      "  ip addr show | grep -q \"${var.k8s_api_endpoint_vip}\" && echo \"✅ VIP ${var.k8s_api_endpoint_vip} bound successfully!\" || echo \"⚠️  VIP not visible yet on routing tables.\"",
-      "fi",
-
       "echo '------------------------------------------------------------'"
     ]
   }
@@ -226,6 +207,7 @@ resource "null_resource" "join_k8s" {
     private_key = file(var.ssh_private_key_path)
   }
 
+  # Upload the configuration rendered for the servers (CPs) and agents (workers) nodes
   provisioner "file" {
     content = templatefile("${path.module}/templates/rke2-config.yaml.tftpl", {
       cluster_token        = var.k8s_cluster_token
@@ -239,9 +221,18 @@ resource "null_resource" "join_k8s" {
     destination = "/tmp/rke2-config.yaml"
   }
 
-  # =========================================================================
-  # PROVISIONER 1: CONFIGURATION (Silenced by Terraform due to Sensitive Token)
-  # =========================================================================
+  # Remove taint protection on Compac Cluster
+  provisioner "file" {
+    content = templatefile("${path.module}/templates/taint-fixer.yaml.tftpl", {})
+    destination = "/tmp/taint-fixer.yaml"
+  }
+
+  # Upload Systemd Override
+  provisioner "file" {
+    source      = "${path.module}/templates/rke2-override.service.tftpl"
+    destination = "/tmp/rke2-override.conf"
+  }
+
   provisioner "remote-exec" {
 
     inline = [
@@ -252,37 +243,17 @@ resource "null_resource" "join_k8s" {
       "echo '✅ Cloud-Init finished! OS is fully updated and unlocked.'",
 
       "if [ '${var.deployment_flavor}' = 'rke2-cluster' ]; then",
-      "  if [ '${each.value.type}' = 'rke2-server' ]; then",
-           # ONLY RUN if RKE2 isn't already installed/running
-      "    if systemctl is-active --quiet rke2-server; then echo '🛑 RKE2 already configured. Skipping.'; exit 0; fi",
-      "  elif [ '${each.value.type}' = 'rke2-agent' ]; then",
-           # ONLY RUN if RKE2 isn't already installed/running
-      "    if systemctl is-active --quiet rke2-agent; then echo '🛑 RKE2 already configured. Skipping.'; exit 0; fi",
-      "  fi",
+      "  export INSTALL_RKE2_CHANNEL='stable'",
       "  sudo mkdir -p /etc/rancher/rke2",
       "  sudo mv /tmp/rke2-config.yaml /etc/rancher/rke2/config.yaml",
-      "fi",
-    ]
-  }
-
-  # Upload Systemd Override
-  provisioner "file" {
-    source      = "${path.module}/templates/rke2-override.service.tftpl"
-    destination = "/tmp/rke2-override.conf"
-  }
-
-  # =========================================================================
-  # PROVISIONER 2: LIFECYCLE & INSTALLATION (100% Visible in Console)
-  # =========================================================================
-  provisioner "remote-exec" {
-
-    inline = [
-      "set -e",
-      "if [ '${var.deployment_flavor}' = 'rke2-cluster' ]; then",
-      "  export INSTALL_RKE2_CHANNEL='stable'",
       "  if [ '${each.value.type}' = 'rke2-server' ]; then",
            # ONLY RUN if RKE2 isn't already installed/running
       "    if systemctl is-active --quiet rke2-server; then echo '🛑 RKE2 already configured. Skipping.'; exit 0; fi",
+      
+      "    sudo mkdir -p /var/lib/rancher/rke2/server/manifests",
+      "    echo '⚙️  Remove taint protection on Compac Cluster with only Control Planes...'",
+      "    sudo mv /tmp/taint-fixer.yaml /var/lib/rancher/rke2/server/manifests/taint-fixer.yaml",
+
       "    echo '⏳ Installing and starting RKE2 Control Plane...'",
       "    curl -sfL https://get.rke2.io | sudo INSTALL_RKE2_SKIP_START=true sh -",
       "  elif [ '${each.value.type}' = 'rke2-agent' ]; then",
@@ -347,8 +318,7 @@ resource "null_resource" "rke2_cephfs_csi" {
     private_key = file(var.ssh_private_key_path)
   }
 
-  # STAGE 1: Sensitive execution (Output will be automatically suppressed by Terraform)
-  # 1. Upload the template
+  # Upload the template Ceph Secret
   provisioner "file" {
     content = templatefile("${path.module}/templates/ceph-csi-secret.yaml.tftpl", {
       ceph_key = var.proxmox_ceph_k8s_key
@@ -361,25 +331,32 @@ resource "null_resource" "rke2_cephfs_csi" {
     ]
   }
 
-  # STAGE 2: Non-sensitive execution (Output will be fully verbose and visible in clear text)
-  # 1. Upload the templates
+  # Upload the template Ceph Storage Net
   provisioner "file" {
     content = templatefile("${path.module}/templates/ceph-csi-storage-net.yaml.tftpl", {
       interface_name = var.k8s_ceph_storage_interface_name
+      mtu            = 9000
       subnet         = var.proxmox_ceph_storage_subnet
+      rangeStart     = var.k8s_ceph_storage_pods_ip_range.start
+      rangeEnd       = var.k8s_ceph_storage_pods_ip_range.end
     })
     destination = "/tmp/ceph-csi-storage-net.yaml"
   }
 
+  # Upload the template Ceph Storage Ceph CSI Helm
   provisioner "file" {
     content = templatefile("${path.module}/templates/ceph-csi-helm.yaml.tftpl", {
-      monitors_list = join("\n", [for node in var.proxmox_nodes : "- ${node}:6789"])
+      clusterID     = var.proxmox_ceph_clusterID
+      monitors_list = var.proxmox_nodes
+      replica_count = length(var.kube_nodes) == 1 ? 1 : 3
     })
     destination = "/tmp/ceph-csi-helm.yaml"
   }
 
   provisioner "file" {
-    source      = "${path.module}/templates/ceph-csi-storageclass.yaml.tftpl"
+    content = templatefile("${path.module}/templates/ceph-csi-storageclass.yaml.tftpl", {
+      clusterID     = var.proxmox_ceph_clusterID
+    })
     destination = "/tmp/ceph-csi-storageclass.yaml"
   }
 
@@ -392,6 +369,11 @@ resource "null_resource" "rke2_cephfs_csi" {
       # 0. ADD THIS: Deploy the NetworkAttachmentDefinition for Multus
       "echo '📦 Deploying NetworkAttachmentDefinition...'",
       "sudo mv /tmp/ceph-csi-storage-net.yaml /var/lib/rancher/rke2/server/manifests/",
+
+      # Wait until the NAD exists in the K8s API
+      "echo '⏳ Waiting to NAD be available on cluster...'",
+      "until sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get network-attachment-definition -n kube-system ceph-storage-net; do sleep 5; done",
+      "echo '✅ NAD detected!'",
 
       # 1. Create the HelmChart with integrated dynamic cluster configuration
       "echo '📦 Deploying Ceph-CSI HelmChart manifest...'",
@@ -434,18 +416,12 @@ resource "null_resource" "needed_reboot_node" {
       "echo '------------------------------------------------------------'",
       "echo '🔍 Checking for pending reboot on ${split("/", each.value.ip_address)[0]}...'",
       "if [ -f /var/run/reboot-required ]; then",
-      # "  echo '⚠️  System restart IS required. Initiating reboot now...';",
-      # "  echo '⏳ Reboot scheduled. Safe exit from current SSH session...';",
-      # "  echo '⏳ Sleeping for 180s to let ALL nodes reboot & recover...'",
-      # "  sudo shutdown -r +1 'Terraform OS Update Reboot' <&- >/dev/null 2>&1 &",
-      # "  sudo sh -c 'echo scheduled > /tmp/terraform-reboot-scheduled';",
-      "echo '⚠️ WARNING: System restart IS required for Node ${each.key}'",
-      "echo 'To reboot safely, run:'",
-      "echo 'kubectl drain ${each.key} --ignore-daemonsets --delete-emptydir-data'",
-      "echo 'And then: sudo reboot'",
+      "  echo '⚠️ WARNING: System restart IS required for Node ${each.key}'",
+      "  echo 'To reboot safely, run:'",
+      "  echo 'kubectl drain ${each.key} --ignore-daemonsets --delete-emptydir-data'",
+      "  echo 'And then: sudo reboot'",
       "else",
       "  echo '✅ No reboot required for this node. Skipping.';",
-      #"  echo '⏳ Sleeping for 180s to let ALL nodes stabilize...'",
       "fi",
       "echo '------------------------------------------------------------'",
       "sleep 5"

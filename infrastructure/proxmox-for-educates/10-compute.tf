@@ -35,14 +35,14 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     bridge      = each.value.network_bridge
   }
 
-  dynamic "network_device" {
-  # If ceph_ip_address is not empty, we create 1 element; if it is empty, 0.
-  for_each = each.value.ceph_ip_address != "" ? [1] : []
-  content {
-    bridge = each.value.ceph_bridge
-    #mtu   = 9000
+  # dynamic "network_device" {
+  # # If ceph_ip_address is not empty, we create 1 element; if it is empty, 0.
+  # for_each = each.value.ceph_ip_address != "" ? [1] : []
+  # content {
+  network_device {
+    bridge = var.proxmox_ceph_bridge
+    mtu   = 9000
   }
-}
 
   operating_system { type = "l26" }
 
@@ -68,16 +68,6 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     }
     dns {
       servers = each.value.dns_servers
-    }
-
-    # Dynamically add the secondary IP only if the variable is not empty
-    dynamic "ip_config" {
-      for_each = each.value.ceph_ip_address != "" ? [each.value.ceph_ip_address] : []
-      content {
-        ipv4 {
-          address = ip_config.value
-        }
-      }
     }
 
     user_account {
