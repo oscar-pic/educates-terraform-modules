@@ -17,27 +17,6 @@ runcmd:
     set -x
     export DEBIAN_FRONTEND=noninteractive
 
-    echo "Creating bridge br_ceph to hook it with Multus/Ceph-CSI..."
-    cat <<EOF > /etc/netplan/99-ceph-bridge.yaml
-    network:
-      version: 2
-      ethernets:
-        ${ceph_interface_name}:
-          dhcp4: no
-          dhcp6: no
-      bridges:
-        br_ceph:
-          interfaces: [${ceph_interface_name}]
-          dhcp4: no
-          dhcp6: no
-          parameters:
-            stp: false
-            forward-delay: 0
-          mtu: 9000
-    EOF
-    chmod 600 /etc/netplan/99-ceph-bridge.yaml
-    netplan apply
-
     echo "Waiting for apt lock..."
     while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
       sleep 5

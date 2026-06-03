@@ -9,6 +9,11 @@ spec:
   targetNamespace: kube-system
   valuesContent: |
     nodeplugin:
+      enableHostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
       httpMetrics:
         enabled: false
       affinity:
@@ -21,9 +26,9 @@ spec:
                 operator: In
                 values:
                 - "true"
-      podAnnotations:
-        k8s.v1.cni.cncf.io/networks: kube-system/ceph-storage-net
     provisioner:
+      enableHostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       replicaCount: ${replica_count}
       affinity:
         nodeAffinity:
@@ -35,11 +40,9 @@ spec:
                 operator: In
                 values:
                 - "true"
-      podAnnotations:
-        k8s.v1.cni.cncf.io/networks: kube-system/ceph-storage-net
     csiConfig:
       - clusterID: "${clusterID}"
         monitors:
-%{ for node in monitors_list ~}
-          - ${node}:6789
+%{ for node in ceph_monitors_list ~}
+          - "${node}:6789"
 %{ endfor ~}

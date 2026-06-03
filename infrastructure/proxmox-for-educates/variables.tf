@@ -7,6 +7,15 @@ variable "deployment_flavor" {
   }
 }
 
+variable "proxmox_nodes" {
+  type    = list(string)
+  default = ["proxmox-server"]
+}
+
+variable "proxmox_nodes_ceph_IPs" {
+  type    = list(string)
+}
+
 variable "proxmox_endpoint" { 
   type    = string
   default = "https://192.168.1.28:8006" 
@@ -29,35 +38,37 @@ variable "proxmox_ceph_k8s_key" {
   sensitive   = true
 }
 
-variable "proxmox_ceph_bridge" {
+variable "k8s_gateway_api_cert_strategy" {
+  description = "Options: 'provided', 'self-signed', 'letsencrypt'"
+  # Let's Encrypt not tested yet
   type        = string
-  default     = "vmbr1"
-  description = "Bridge used in all Proxmox K8s VMs for Ceph Traffic"
+  default     = "provided"
 }
 
-variable "proxmox_ceph_storage_subnet" {
+variable "k8s_gateway_api_apps_cert_domains" {
+  description = "The DNS Domains used by Cilium Gatway API for LoadBalancer services"
+  type        = list(string)
+  # Must be a public domain for use with Let's Encrypt option
+  # Example: "app.example.com"
+}
+
+variable "k8s_gateway_api_letsencrypt_email" {
+  description = "Email for Let's Encrypt expiration notices"
   type        = string
-  description = "CIDR block for the Ceph storage network"
-  default     = "10.10.60.0/24"
+  #Example: admin@app.example.com"
+  # Only used with Let's Encrypt option
 }
 
-variable "k8s_ceph_storage_pods_ip_range" {
-  type = object({
-    start = string
-    end   = string
-  })
-  description = "Dynamic Range for Storage Pods"
-}
+variable "k8s_gateway_api_dns_provider_api_token" {
+    type      = string
+    sensitive = true
+    # Only used with Let's Encrypt option
+  }
 
-variable "k8s_ceph_storage_interface_name" {
+variable "k8s_gateway_api_lb_ip_range" {
+  description = "The CIDR range used by Cilium Gatway API for LoadBalancer services"
   type        = string
-  description = "The physical or bridge interface name on the k8s nodes"
-  default     = "ens19"
-}
-
-variable "proxmox_nodes" {
-  type    = list(string)
-  default = ["proxmox-server"]
+  # Example: "192.168.10.100/30" or "10.0.0.0/24"
 }
 
 variable "ssh_private_key_path" {
@@ -121,6 +132,17 @@ variable "k8s_cluster_token" {
   sensitive   = true
 }
 
+variable "k8s_ceph_node_interface" {
+  description = "Optional Name Interface for Ceph"
+  type        = string
+  default     = "eth1"
+}
+
+variable "k8s_ceph_network_cidr" {
+  description = "Ceph Network"
+  type        = string
+}
+
 variable "system_timezone" {
   type        = string
   description = "The system timezone for the deployed nodes"
@@ -130,21 +152,22 @@ variable "system_timezone" {
 variable "kube_nodes" {
   description = "Unified node configuration"
   type = map(object({
-    type            = string 
-    proxmox_host    = number
-    mac_address     = optional (string, "")
-    ip_address      = string
-    gateway         = string
-    dns_servers     = optional(list(string), ["8.8.8.8, 1.1.1.1"]) # Default if not specified
-    network_bridge  = optional(string, "vmbr0")
-    vm_user         = optional(string, "ubuntu")           # Default here
-    vm_password     = optional(string, "Ubuntu1!") # Default here
-    ssh_key_path    = optional(string, "~/.ssh/id_ed25519.pub") # Default here
-    vm_cores        = optional(number, 4)
-    vm_memory       = optional(number, 8192)
-    vm_disk_size    = optional(number, 30)
-    
-    config_patches  = optional(list(string), [])
+    type                = string 
+    proxmox_host        = number
+    mac_address         = optional (string, "")
+    ip_address          = string
+    gateway             = string
+    dns_servers         = optional(list(string), ["8.8.8.8, 1.1.1.1"]) # Default if not specified
+    network_bridge      = optional(string, "vmbr0")
+    ceph_ip_address     = string
+    ceph_network_bridge = optional(string, "vmbr0")
+    vm_user             = optional(string, "ubuntu")           # Default here
+    vm_password         = optional(string, "Ubuntu1!") # Default here
+    ssh_key_path        = optional(string, "~/.ssh/id_ed25519.pub") # Default here
+    vm_cores            = optional(number, 4)
+    vm_memory           = optional(number, 8192)
+    vm_disk_size        = optional(number, 30)
+    node_labels         = optional(list(string), [])
   }))
 }
 

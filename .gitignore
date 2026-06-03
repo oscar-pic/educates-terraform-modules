@@ -7,9 +7,15 @@
 
 # .tfplan files
 *.tfplan
+*.plan
 *.tfplan.*
 
-# Crash log files
+# Crash logs and internal lock files
+*.tfstate.lock.hcl
+.terraform.tfstate.lock.info
+*.terraform.lock.hcl
+*.log
+errored.tfstate
 crash.log
 crash.*.log
 
@@ -29,17 +35,8 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Ignore transient lock info files created by terraform apply
-.terraform.tfstate.lock.info
-.terraform.lock.hcl
-
 # Include override files you do wish to add to version control using negated pattern
 # !example_override.tf
-
-# Include tfplan files to ignore the plan output of command: terraform plan -out=tfplan
-# example: *tfplan*
-*tfplan*
-*.plan
 
 # Ignore CLI configuration files
 .terraformrc
@@ -52,7 +49,12 @@ terraform.rc
 .envrc
 .DS_Store
 **/.DS_Store
+Thumbs.db
 
 # Kubernetes dynamic configuration
 **/k8s_config.yaml
 **/k8s_config.tmp
+
+# Local certs and test directories
+**/certs/*
+**/test/*

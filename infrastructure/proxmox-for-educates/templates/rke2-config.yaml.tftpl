@@ -12,15 +12,17 @@ tls-san:
 %{ endfor ~}
 %{ endif }
 
-cni:
-  - multus
-  - cilium
+cni: "none"
+disable-kube-proxy: true
+disable-cloud-controller: true
 
 disable:
-  - rke2-canal
-disable-kube-proxy: true
+  - rke2-ingress-nginx
 
-%{ if !is_server }
 node-label:
+%{ if !is_server }
   - "node-role.kubernetes.io/worker=true"
 %{ endif }
+%{ for label in extra_node_labels_list ~}
+  - "${label}"
+%{ endfor ~}

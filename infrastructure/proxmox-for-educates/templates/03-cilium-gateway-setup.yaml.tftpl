@@ -1,0 +1,64 @@
+# 0. GatewayClass
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: cilium
+spec:
+  controllerName: io.cilium/gateway-controller
+---
+# 1. Load Balancer IP Pool for Services
+apiVersion: "cilium.io/v2"
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: default-pool
+spec:
+  blocks:
+  - cidr: "${lb_ip_range}"
+---
+# 2. L2 Announcement Policy
+apiVersion: "cilium.io/v2alpha1"
+kind: CiliumL2AnnouncementPolicy
+metadata:
+  name: default-l2-policy
+spec:
+  externalIPs: true
+  loadBalancerIPs: true
+  nodeSelector:
+    matchLabels:
+      kubernetes.io/os: linux
+#  serviceSelector:
+#    matchExpressions:
+#      - key: "io.cilium/lb-ipam-ips"
+#        operator: Exists
+  interfaces:
+    - "${network_device}"
+---
+# 3. Gateway definition (Port 80/443 prepared)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: main-gateway
+  namespace: kube-system
+  annotations:
+    io.cilium/lb-ipam-ips: ""
+spec:
+  gatewayClassName: cilium
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: https
+    protocol: HTTPS
+    port: 443
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - name: gateway-api-default-cert
+        kind: Secret 
+        namespace: kube-system
+    allowedRoutes:
+      namespaces:
+        from: All

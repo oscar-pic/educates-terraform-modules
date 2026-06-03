@@ -35,19 +35,14 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     bridge      = each.value.network_bridge
   }
 
-  # dynamic "network_device" {
-  # # If ceph_ip_address is not empty, we create 1 element; if it is empty, 0.
-  # for_each = each.value.ceph_ip_address != "" ? [1] : []
-  # content {
   network_device {
-    bridge = var.proxmox_ceph_bridge
-    mtu   = 9000
+    bridge = each.value.ceph_network_bridge
+    mtu    = 9000
   }
 
   operating_system { type = "l26" }
 
   initialization {
-    #datastore_id = var.proxmox_images_snippets_datastore.name
     datastore_id = var.proxmox_vms_datastore.name
     interface    = "scsi1"
     upgrade = true
@@ -68,6 +63,12 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     }
     dns {
       servers = each.value.dns_servers
+    }
+
+    ip_config {
+      ipv4 {
+        address = "${each.value.ceph_ip_address}"
+      }
     }
 
     user_account {

@@ -42,14 +42,11 @@ resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
     data = templatefile("${path.module}/templates/ubuntu-payload.tftpl", {
       hostname            = each.key
       deployment_flavor   = var.deployment_flavor
-      # This adds 6 spaces to the start of every line in your config_patches list
-      extra_configs       = join("\n      ", each.value.config_patches)
       timezone            = var.system_timezone
-      ceph_interface_name = var.k8s_ceph_storage_interface_name
+      ceph_interface      = var.k8s_ceph_node_interface
+      ceph_network        = var.k8s_ceph_network_cidr
     })
     # This names the file on the Proxmox storage (e.g., qemu-k3s-init-educates-01.yaml)
     file_name = "ubuntu-${var.deployment_flavor}-${each.key}.yaml"
-    # If content_type is "iso", you need to rename the file with .iso or .img extension and ensure the data is the rendered template content without base64 encoding.
-    # file_name = "ubuntu-${var.deployment_flavor}-${each.key}.yaml.iso or .yaml.img"
   }
 }

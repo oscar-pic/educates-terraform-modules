@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-vip
+  namespace: kube-system
+spec:
+  serviceAccountName: kube-vip
+  automountServiceAccountToken: true
+  containers:
+  - name: kube-vip
+    image: ghcr.io/kube-vip/kube-vip:v0.8.9
+    imagePullPolicy: IfNotPresent
+    args:
+    - manager
+    - --leaseDuration=15
+    - --leaseRenewDuration=10
+    - --leaseRetry=3
+    env:
+    - name: vip_arp
+      value: "true"
+    - name: vip_leaderelection
+      value: "true"
+    - name: vip_address
+      value: "${vip_address}"
+    - name: vip_cidr
+      value: "32"
+    - name: vip_interface
+      value: "${vip_interface}"
+    - name: cp_enable
+      value: "true"
+    - name: cp_namespace
+      value: "kube-system"
+    securityContext:
+      capabilities:
+        add:
+        - NET_ADMIN
+        - NET_RAW
+  hostNetwork: true
+  tolerations:
+  - effect: NoSchedule
+    operator: Exists
+  - effect: NoExecute
+    operator: Exists

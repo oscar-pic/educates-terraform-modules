@@ -41,9 +41,6 @@ kube_nodes = {
     vm_cores       = 4
     vm_memory      = 8192
     network_bridge = "vmbr0"
-    config_patches = [
-      "node-label: flavor=single-node-k3s"
-      # ServiceLB is ENABLED by default in k3s, so we leave it alone here.
-    ]
+    node_labels    = ["flavor=single-node-k3s"]
   }
 }
