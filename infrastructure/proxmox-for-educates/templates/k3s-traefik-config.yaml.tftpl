@@ -1,0 +1,17 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      web:
+        expose: false
+        exposedPort: 80
+        protocol: TCP
+    tlsStore:
+      default:
+        defaultCertificate:
+          secretName: ${secret_name}
+          namespace: kube-system

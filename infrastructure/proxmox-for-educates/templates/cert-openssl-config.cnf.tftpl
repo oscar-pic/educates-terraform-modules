@@ -1,0 +1,15 @@
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = ${primary_domain}
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+%{ for index, domain in domains ~}
+DNS.${index + 1} = ${domain}
+%{ endfor ~}

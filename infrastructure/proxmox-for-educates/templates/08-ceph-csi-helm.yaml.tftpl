@@ -22,10 +22,10 @@ spec:
           - weight: 100
             preference:
               matchExpressions:
-              - key: node-role.kubernetes.io/worker
+              - key: role
                 operator: In
                 values:
-                - "true"
+                - "worker"
     provisioner:
       enableHostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
@@ -36,10 +36,10 @@ spec:
           - weight: 100
             preference:
               matchExpressions:
-              - key: node-role.kubernetes.io/worker
+              - key: role
                 operator: In
                 values:
-                - "true"
+                - "worker"
     csiConfig:
       - clusterID: "${clusterID}"
         monitors:

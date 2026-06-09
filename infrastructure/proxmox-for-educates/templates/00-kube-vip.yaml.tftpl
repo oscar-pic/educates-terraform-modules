@@ -3,9 +3,21 @@ kind: Pod
 metadata:
   name: kube-vip
   namespace: kube-system
+  labels:
+    rke2.io/addon: "true" 
 spec:
+  hostNetwork: true
   serviceAccountName: kube-vip
   automountServiceAccountToken: true
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: "true"
+  tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+  - key: "node-role.kubernetes.io/master"
+    operator: "Exists"
+    effect: "NoSchedule"
   containers:
   - name: kube-vip
     image: ghcr.io/kube-vip/kube-vip:v0.8.9
@@ -31,13 +43,8 @@ spec:
     - name: cp_namespace
       value: "kube-system"
     securityContext:
+      privileged: true
       capabilities:
         add:
         - NET_ADMIN
         - NET_RAW
-  hostNetwork: true
-  tolerations:
-  - effect: NoSchedule
-    operator: Exists
-  - effect: NoExecute
-    operator: Exists

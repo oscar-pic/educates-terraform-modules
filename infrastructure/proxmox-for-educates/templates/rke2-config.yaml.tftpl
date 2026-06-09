@@ -10,6 +10,12 @@ tls-san:
 %{ for ip in nodes_ips ~}
   - "${ip}"
 %{ endfor ~}
+
+kube-controller-manager-arg:
+  - "allocate-node-cidrs=true"
+  - "cluster-cidr=10.42.0.0/16"
+  - "service-cluster-ip-range=10.43.0.0/16"
+  - "node-cidr-mask-size=24"
 %{ endif }
 
 cni: "none"
@@ -19,10 +25,9 @@ disable-cloud-controller: true
 disable:
   - rke2-ingress-nginx
 
+%{ if length(extra_node_labels_list) > 0 ~}
 node-label:
-%{ if !is_server }
-  - "node-role.kubernetes.io/worker=true"
-%{ endif }
 %{ for label in extra_node_labels_list ~}
   - "${label}"
 %{ endfor ~}
+%{ endif ~}

@@ -24,7 +24,7 @@ runcmd:
 
     echo "Updating and installing baseline requirements..."
     apt-get update
-    apt-get install -y qemu-guest-agent curl ceph-common
+    apt-get install -y qemu-guest-agent curl ceph-common jq
     systemctl enable --now qemu-guest-agent || true
     systemctl start qemu-guest-agent || true
 

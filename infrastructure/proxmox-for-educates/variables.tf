@@ -38,28 +38,28 @@ variable "proxmox_ceph_k8s_key" {
   sensitive   = true
 }
 
-variable "k8s_gateway_api_cert_strategy" {
+variable "k8s_cert_strategy" {
   description = "Options: 'provided', 'self-signed', 'letsencrypt'"
   # Let's Encrypt not tested yet
   type        = string
   default     = "provided"
 }
 
-variable "k8s_gateway_api_apps_cert_domains" {
-  description = "The DNS Domains used by Cilium Gatway API for LoadBalancer services"
+variable "k8s_apps_cert_domains" {
+  description = "The DNS Domains used by Cilium Gateway API or by Traefik for LoadBalancer services"
   type        = list(string)
   # Must be a public domain for use with Let's Encrypt option
   # Example: "app.example.com"
 }
 
-variable "k8s_gateway_api_letsencrypt_email" {
+variable "k8s_letsencrypt_email" {
   description = "Email for Let's Encrypt expiration notices"
   type        = string
   #Example: admin@app.example.com"
   # Only used with Let's Encrypt option
 }
 
-variable "k8s_gateway_api_dns_provider_api_token" {
+variable "k8s_letsencrypt_dns_provider_api_token" {
     type      = string
     sensitive = true
     # Only used with Let's Encrypt option
@@ -160,7 +160,7 @@ variable "kube_nodes" {
     dns_servers         = optional(list(string), ["8.8.8.8, 1.1.1.1"]) # Default if not specified
     network_bridge      = optional(string, "vmbr0")
     ceph_ip_address     = string
-    ceph_network_bridge = optional(string, "vmbr0")
+    ceph_network_bridge = optional(string, "vmbr1")
     vm_user             = optional(string, "ubuntu")           # Default here
     vm_password         = optional(string, "Ubuntu1!") # Default here
     ssh_key_path        = optional(string, "~/.ssh/id_ed25519.pub") # Default here

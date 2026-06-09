@@ -56,7 +56,7 @@ spec:
     tls:
       mode: Terminate
       certificateRefs:
-      - name: gateway-api-default-cert
+      - name: ${secret_name}
         kind: Secret 
         namespace: kube-system
     allowedRoutes:
