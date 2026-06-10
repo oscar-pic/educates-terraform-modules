@@ -27,8 +27,6 @@ locals {
     for k, v in local.all_nodes : k => v if v.type == "rke2-server" || v.type == "rke2-agent"
   } : {}
 
-  rke2_cp_joiner_keys_list = [for k, v in local.rke2_joiner_node_map : k if v.type == "rke2-server"]
-
   # Number of CP on RKE2 deployment
   rke2_cp_node_map = var.deployment_flavor == "rke2-cluster" ? {
     for k, v in local.all_nodes : k => v if v.type == "rke2-server" || v.type == "rke2-server-bootstrap"
@@ -362,9 +360,6 @@ resource "null_resource" "join_rke2_cp" {
       "sudo cloud-init status --wait || true",
       "echo '✅ Cloud-Init finished! OS is fully updated and unlocked.'",
 
-      # We pass the CP list as JSON: Terraform generates it, Bash receives it
-      "export CP_KEYS_JSON='${jsonencode(local.rke2_cp_joiner_keys_list)}'",
-
       "export INSTALL_RKE2_CHANNEL='stable'",
       "sudo mkdir -p /etc/rancher/rke2",
       "sudo mv /tmp/rke2-config.yaml /etc/rancher/rke2/config.yaml",
@@ -397,21 +392,64 @@ resource "null_resource" "join_rke2_cp" {
       "echo '⚙️  Creating safe global symlink for kubectl binary...'",
       "sudo ln -sf /var/lib/rancher/rke2/bin/kubectl /usr/local/bin/kubectl",
 
-      "MY_KEY='${each.key}'",
-      "INDEX=$(echo \"$CP_KEYS_JSON\" | jq -r 'index(\"'$MY_KEY'\")')",
-      "if [ \"$INDEX\" -gt 0 ]; then",
-         # We obtain the name of the previous node using jq
-      "  PREV_KEY=$(echo \"$CP_KEYS_JSON\" | jq -r \".[$(($INDEX - 1))]\")",
-      "  echo \"⏳ CP ${each.key} waiting for $PREV_KEY to be Ready...\"",
-      "  until sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get node \"$PREV_KEY\" --no-headers 2>/dev/null | grep -q 'Ready'; do",
-      "    echo \"🔄 Nodo $PREV_KEY aún no está Ready, esperando...\"",
-      "    sleep 10",
-      "  done",
-      "fi",
+      "echo '✅ Node joined successfully!'"
+    ]
+  }
+}
 
-      "echo '✅ Node joined successfully!'",
-      "echo '⏳ Waiting 30s for stabilization before releasing the next node...'",
-      "sleep 30"
+resource "null_resource" "wait_rke2_cp_ready" {
+  for_each = local.rke2_bootstrap_node_map
+  depends_on = [null_resource.join_rke2_cp]
+
+  connection {
+    type        = "ssh"
+    user        = each.value.vm_user
+    host        = split("/", each.value.ip_address)[0]
+    private_key = file(var.ssh_private_key_path)
+    timeout     = "12m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -e",
+      "KCONF='/etc/rancher/rke2/rke2.yaml'",
+
+      "echo '⏳ Waiting for API Server...'",
+      "until sudo kubectl --kubeconfig $KCONF get nodes >/dev/null 2>&1; do sleep 5; done",
+      "echo '✅ API Server is responding!'",
+      
+      "echo '⏳ Waiting for ALL cluster nodes to report Ready...'",
+      "NODE_TIMEOUT=300",
+      "NODE_ELAPSED=0",
+      "until [ \"$(sudo kubectl --kubeconfig $KCONF get nodes -o jsonpath='{.items[*].status.conditions[?(@.type==\"Ready\")].status}' | grep -o 'True' | wc -l)\" -eq \"${local.number_of_nodes}\" ]; do",
+      "  if [ \"$NODE_ELAPSED\" -ge \"$NODE_TIMEOUT\" ]; then echo '❌ Error: Timeout waiting for nodes.'; exit 1; fi",
+      "  echo '🔄 Waiting for all CP nodes to be Ready...'",
+      "  sleep 10",
+      "  NODE_ELAPSED=$((NODE_ELAPSED + 10))",
+      "done",
+      "echo '✅ All CP nodes are Ready!'",
+      "sleep 10",
+
+      "echo '⏳ Checking for Pod stability in kube-system...'",
+      "CORE_TIMEOUT=600",
+      "CORE_ELAPSED=0",
+      "until [ \"$CORE_ELAPSED\" -ge \"$CORE_TIMEOUT\" ]; do",
+      "  BAD_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n kube-system --no-headers 2>/dev/null | grep -v 'helm-install' | grep -vE 'Running|Completed' | wc -l || echo 0)",
+      "  NOT_READY_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n kube-system --field-selector=status.phase=Running --no-headers 2>/dev/null | grep -v 'helm-install' | awk '$2 ~ /0\\// {print $0}' | wc -l || echo 0)",
+      
+      "  if [ \"$BAD_PODS\" -eq 0 ] && [ \"$NOT_READY_PODS\" -eq 0 ]; then",
+      "    echo '✅ All core pods are Running/Completed and Ready!'",
+      "    sleep 10",
+      "    break",
+      "  fi",
+      "  echo \"🔄 Waiting... (Bad: $BAD_PODS, Not-Ready: $NOT_READY_PODS). ($CORE_ELAPSED/$CORE_TIMEOUT s)\"",
+      "  sleep 15",
+      "  CORE_ELAPSED=$((CORE_ELAPSED + 15))",
+      "done",
+      "if [ \"$CORE_ELAPSED\" -ge \"$CORE_TIMEOUT\" ]; then",
+      "  echo '⚠️   WARNING: Core pods are taking longer than expected to report Ready.'",
+      "  sleep 10",
+      "fi"
     ]
   }
 }
@@ -420,9 +458,8 @@ resource "null_resource" "join_rke2_worker" {
   #for_each = local.rke2_joiner_node_map 
   for_each   = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-agent" }
   
-  # CRUCIAL: No node attempts to join until the Bootstrap is operational
-  #depends_on = [null_resource.bootstrap_rke2]
-  depends_on = [null_resource.join_rke2_cp]
+  # CRUCIAL: No node attempts to join until the CPs are operational
+  depends_on = [null_resource.wait_rke2_cp_ready]
   
     triggers = {
     # This ID will only change if the VM is destroyed and recreated
