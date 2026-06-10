@@ -457,7 +457,6 @@ resource "null_resource" "wait_rke2_cp_ready" {
 }
 
 resource "null_resource" "join_rke2_worker" {
-  #for_each = local.rke2_joiner_node_map 
   for_each   = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-agent" }
   
   # CRUCIAL: No node attempts to join until the CPs are operational
@@ -530,17 +529,13 @@ resource "null_resource" "join_rke2_worker" {
       "sudo systemctl start rke2-agent.service",
       "echo '⚙️  Creating safe global symlink for kubectl binary...'",
       "sudo ln -sf /var/lib/rancher/rke2/bin/kubectl /usr/local/bin/kubectl",
-
-      "echo '⏳ Waiting for node ${each.key} to report Ready status in Kubernetes...'",
-      "KUBERNETES_API_URL=\"https://${local.rke2_registration_address}:6443\"",
       
       "echo '⏳ Waiting for Kubelet healthz endpoint...'",
       "until curl -s http://127.0.0.1:10248/healthz | grep -q 'ok'; do",
       "  echo '🔄 Kubelet local is not ready yet...'",
       "  sleep 10",
       "done",
-      "echo '✅ Node ${each.key} joined successfully and is fully Ready!'",
-      "echo '⏳ Waiting 10s for stabilization before releasing the next node...'",
+      "echo '✅ Node ${each.key} joined successfully!'",
       "sleep 10"
     ]
   }
@@ -550,7 +545,6 @@ resource "null_resource" "join_rke2_worker" {
 # STEP 3: DEPLOY CERTIFICATES AND GATEWAY API (GW API ONLY FOR RKE2) 
 ###############################################################################
 resource "null_resource" "k3s_certificates_setup" {
-  #depends_on = [null_resource.bootstrap_k3s]
   depends_on = [null_resource.verify_cluster_health] # Because we are doing kubectl commands, we'll need to wait all core pods are running
   for_each   = local.k3s_bootstrap_node_map
   
@@ -651,7 +645,6 @@ resource "null_resource" "k3s_certificates_setup" {
 # Create the TLS secret for the Gateway API
 resource "null_resource" "gateway_api_certificates_setup" {
   # Wait for RKE2 bootstrap to complete before deploying CRDs
-  #depends_on = [null_resource.bootstrap_rke2]
   depends_on = [null_resource.deploy_kube_vip_pod]
   for_each   = local.rke2_bootstrap_node_map
 
@@ -792,7 +785,6 @@ resource "null_resource" "gateway_api_setup" {
 resource "null_resource" "cephfs_csi_setup" {
   # Trigger only after the bootstrap server's control plane is fully verified
   for_each   = local.rke2_bootstrap_node_map
-  #depends_on = [null_resource.bootstrap_rke2]
   depends_on = [null_resource.gateway_api_setup]
   
   connection {
@@ -867,7 +859,7 @@ resource "ssh_resource" "k8s_config" {
   for_each   = local.all_bootstrap_node_map
   depends_on = [
     null_resource.bootstrap_k3s,
-    null_resource.bootstrap_rke2,
+    null_resource.bootstrap_rke2
   ]
 
   user        = each.value.vm_user
@@ -893,7 +885,6 @@ resource "null_resource" "reboot_node_needed" {
   depends_on = [
     local_file.save_kubeconfig, 
     null_resource.join_rke2_worker
-    #null_resource.cephfs_csi_setup
   ]
 
   provisioner "remote-exec" {

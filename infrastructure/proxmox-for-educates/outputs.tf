@@ -18,7 +18,7 @@ VIRTUAL MACHINE STATUS:
 
 KUBERNETES CONFIGURATION:
 * Kubeconfig:   Saved locally as ./k8s_config.yaml
-* Test Cluster: Run 'kubectl --kubeconfig .\k8s_config.yaml get nodes'
+* Test Cluster: Run 'kubectl --kubeconfig ./k8s_config.yaml get nodes'
 
 NEXT STEPS (MANUAL):
 1. Install the Educates CLI on your local machine.
