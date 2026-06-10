@@ -960,7 +960,7 @@ resource "null_resource" "verify_service_status" {
 }
 
 resource "null_resource" "verify_cluster_health" {
-  for_each = local.rke2_bootstrap_node_map
+  for_each   = local.all_bootstrap_node_map
   depends_on = [null_resource.verify_service_status]
 
   connection {
