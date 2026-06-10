@@ -18,11 +18,6 @@ terraform {
       source  = "hashicorp/null"
       version = "~> 3.2.4"
     }
-    # Pause Multiplatform
-    time = {
-      source  = "hashicorp/time"
-      version = ">= 0.14.0"
-    }
     # To read files by SSH without local commands
     ssh = {
       source  = "loafoe/ssh"

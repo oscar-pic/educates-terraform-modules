@@ -32,6 +32,8 @@ locals {
     for k, v in local.all_nodes : k => v if v.type == "rke2-server" || v.type == "rke2-server-bootstrap"
   } : {}
 
+  rke2_number_of_cp = length(local.rke2_cp_node_map)
+
   # Number of workers on RKE2 deployment
   rke2_worker_node_map = var.deployment_flavor == "rke2-cluster" ? {
     for k, v in local.all_nodes : k => v if v.type == "rke2-agent"
@@ -421,7 +423,7 @@ resource "null_resource" "wait_rke2_cp_ready" {
       "echo '⏳ Waiting for ALL cluster nodes to report Ready...'",
       "NODE_TIMEOUT=300",
       "NODE_ELAPSED=0",
-      "until [ \"$(sudo kubectl --kubeconfig $KCONF get nodes -o jsonpath='{.items[*].status.conditions[?(@.type==\"Ready\")].status}' | grep -o 'True' | wc -l)\" -eq \"${local.number_of_nodes}\" ]; do",
+      "until [ \"$(sudo kubectl --kubeconfig $KCONF get nodes -o jsonpath='{.items[*].status.conditions[?(@.type==\"Ready\")].status}' | grep -o 'True' | wc -l)\" -eq \"${local.rke2_number_of_cp}\" ]; do",
       "  if [ \"$NODE_ELAPSED\" -ge \"$NODE_TIMEOUT\" ]; then echo '❌ Error: Timeout waiting for nodes.'; exit 1; fi",
       "  echo '🔄 Waiting for all CP nodes to be Ready...'",
       "  sleep 10",
@@ -884,7 +886,7 @@ resource "local_file" "save_kubeconfig" {
   filename = "${path.module}/k8s_config.yaml"
 }
 
-resource "null_resource" "needed_reboot_node" {
+resource "null_resource" "reboot_node_needed" {
   for_each = var.kube_nodes
 
   # It is executed once the cluster is fully deployed and configured
@@ -916,20 +918,15 @@ resource "null_resource" "needed_reboot_node" {
       "else",
       "  echo '✅ No reboot required for this node. Skipping.';",
       "fi",
-      "echo '------------------------------------------------------------'"
+      "echo '------------------------------------------------------------'",
+      "sleep 20"
     ]
   }
 }
 
-resource "time_sleep" "wait_for_needed_reboot_cycle" {
-  depends_on      = [null_resource.needed_reboot_node]
-  #create_duration = "180s"
-  create_duration = "20s"
-}
-
 resource "null_resource" "verify_service_status" {
   for_each   = var.kube_nodes
-  depends_on = [time_sleep.wait_for_needed_reboot_cycle]
+  depends_on = [null_resource.reboot_node_needed]
 
   connection {
     type        = "ssh"
