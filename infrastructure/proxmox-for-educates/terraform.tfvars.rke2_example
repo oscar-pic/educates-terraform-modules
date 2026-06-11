@@ -47,7 +47,7 @@ system_timezone = "Europe/Madrid"
 # Your Node Definition
 kube_nodes = {
   "k8s-rke2-cp-01" = {
-    type                = "rke2-server-bootstrap"
+    type                = "rke2-server-bootstrap" # Options: k3s --> single-node-k3s, rke2 --> rke2-server-bootstrap, rke2-server, rke2-agent
     proxmox_host        = 0
     #mac_address        = "BC:24:11:AA:BB:CC"
     ip_address          = "192.168.80.201/24"

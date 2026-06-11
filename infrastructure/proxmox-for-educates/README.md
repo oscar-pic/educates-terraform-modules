@@ -1,82 +1,88 @@
-# Educates Deployment on Proxmox with Terraform
+# Educates Infrastructure Deployment on Proxmox
 
-This directory contains the Terraform configuration required to deploy the **Educates** infrastructure on a **Proxmox VE** virtualization environment.
+This repository provides a complete automation framework for deploying Kubernetes clusters (K3s or RKE2) on Proxmox VE using Terraform.
 
-It is designed to provision virtual nodes (typically based on Ubuntu Cloud Images) and configure a Kubernetes cluster (K3s) using the Proxmox provider and Cloud-init for automated bootstrapping.
+## 1. Prerequisites: Local Environment (Your Desktop/Workstation)
 
-## Prerequisites
+To execute the deployment, your local machine must satisfy:
 
-* **Terraform**: Version 1.3 or higher installed locally.
-* **Proxmox VE**: A functional Proxmox cluster or node with API access.
-* **API Token**: A Proxmox API Token with sufficient permissions to create virtual machines, manage storage, and upload snippets.
-* **SSH Access**: An SSH key pair configured on your local machine for Proxmox node access and VM injection.
+* **Terraform**: Version >= 1.15.2.
+* **SSH Keys**: An SSH key pair must be generated (`ssh-keygen -t ed25519`) and available locally. The private key is used by the Proxmox provider to manage file uploads/snipets, and the public key will be injected into VMs for access.
+* **Proxmox Access**: Ensure your local machine can reach the Proxmox API endpoint (HTTPS).
+* **CLI Tools**: `kubectl` is recommended to interact with the cluster after deployment.
 
-## Configuration
+## 2. Prerequisites: Proxmox Environment
 
-To configure the deployment, you must create a `terraform.tfvars` file in this directory. You can use the provided example file as a template:
+* **Permissions**: An API Token must be generated in Proxmox (`Datacenter` -> `Permissions` -> `API Tokens`). Required permissions include `PVEVMAdmin`, `PVEDatastoreAdmin`, and `PVEDataStoreAllocate`.
+* **Storage**:
 
-```bash
-cp terraform.tfvars.k3s_example terraform.tfvars
-```
+  * **Images & Snippets**: A datastore (e.g., `local` or `nfs-shared`) must be enabled for `ISO` and `Snippets` content. If you use local storage, the Terraform provider will use SSH to upload configuration files to each Proxmox node individually.
+  * **VM Disks**: For HA clusters, use a shared datastore (Ceph/NFS/ZFS) to allow VM migration.
+* **Network**:
+  * **Management (`vmbr0`)**: Used for the VM default gateway and K8s API connectivity.
+  * **Storage (`vmbr1`)**: Highly recommended for RKE2 clusters to isolate Ceph traffic. Automated configuration of MTU 9000 is performed for these nodes.
 
-### Key Variables
+## 3. Configuration Variables (`variables.tf`)
 
-Edit the `terraform.tfvars` file to match your environment:
+### A. Provider & Connectivity
 
-* **proxmox_endpoint**: The API URL of your Proxmox server (e.g., `https://192.168.1.100:8006/`).
-* **proxmox_api_token**: Your authentication token (format: `user@pve!token_id=secret`).
-* **proxmox_nodes**: An array of the physical node names in your Proxmox cluster.
-* **deployment_flavor**: Defines the deployment type (e.g., `single-node-k3s`).
-* **kube_nodes**: A map defining the virtual machines, including resources (CPU, RAM), networking (IP, Gateway, Bridge), and login credentials.
+| Variable | Description |
+| :--- | :--- |
+| `proxmox_endpoint` | Proxmox API URL (e.g., `https://192.168.1.28:8006`) |
+| `proxmox_api_token` | API Token (format: `user@pve!token=secret`) |
+| `proxmox_nodes` | Array of physical node names (e.g., `["pve01", "pve02"]`) |
+| `proxmox_nodes_ceph_IPs` | IP addresses of the physical nodes for Ceph traffic |
+| `ssh_private_key_path` | Local path to your private key (for Proxmox host access) |
 
-## Deployment
+### B. OS & Storage Configuration
 
-Once the variables are configured, run the standard Terraform workflow:
+| Variable | Description |
+| :--- | :--- |
+| `cloud_image_url` | Download URL for the Ubuntu cloud image |
+| `proxmox_image_filename` | Filename to store in Proxmox |
+| `proxmox_images_snippets_datastore` | Map `{"name": "...", "shared": true/false}` for snippets |
+| `proxmox_vms_datastore` | Map `{"name": "...", "shared": true/false}` for VM disks |
 
-1. **Initialize the directory**:
+### C. Deployment & Kubernetes
 
-   ```bash
-   terraform init -reconfigure
-   ```
+| Variable | Description |
+| :--- | :--- |
+| `deployment_flavor` | `'single-node-k3s'`, `'rke2-cluster'`, or `'talos-cluster'` |
+| `k8s_cert_strategy` | Certificate strategy (`'provided'`, `'self-signed'`, `'letsencrypt'`) |
+| `k8s_apps_cert_domains` | Domains for certificates (if using Let's Encrypt) |
+| `k8s_letsencrypt_email` | Admin email for Let's Encrypt |
+| `k8s_letsencrypt_dns_provider_api_token` | Token for external DNS provider API |
+| `k8s_api_endpoint_vip` | Virtual IP for RKE2 API load balancing (Mandatory for HA) |
+| `k8s_api_cp_interface` | NIC interface for the VIP (e.g., `eth0`) |
+| `k8s_cluster_token` | Cluster join token for nodes |
+| `k8s_ceph_node_interface` | Network interface for Ceph traffic |
+| `k8s_ceph_network_cidr` | Network range for Ceph traffic |
+| `proxmox_ceph_clusterID` | Ceph cluster FSID |
+| `proxmox_ceph_k8s_key` | Base64 Ceph client key |
+| `k8s_gateway_api_lb_ip_range` | IP range for Gateway API LoadBalancer |
+| `system_timezone` | Server timezone (e.g., `'Europe/Madrid'`) |
 
-2. **Preview the execution plan**:
+### D. Node Map (`kube_nodes`)
 
-   ```bash
-   terraform plan -var-file="k3s.tfvars" -out="k3s.tfplan"
-   #or
-   terraform plan -var-file="rke2.tfvars" -out="rke2.tfplan"
-   ```
+The `kube_nodes` map defines the VMs. Each entry must contain:
 
-3. **Apply the changes**:
+* `type`: Role (`single-node-k3s`, `rke2-server-bootstrap`, `rke2-server`, `rke2-agent`).
+* `proxmox_host`: Index corresponding to the `proxmox_nodes` list.
+* `ip_address` / `gateway`: Network configuration.
+* `dns_servers`: List of DNS resolvers.
+* `network_bridge` / `ceph_network_bridge`: Proxmox bridges.
+* `ceph_ip_address`: Static IP for Ceph.
+* `vm_user` / `vm_password` / `ssh_key_path`: OS access credentials.
+* `vm_cores` / `vm_memory` / `vm_disk_size`: VM hardware specs.
+* `node_labels`: K8s labels for scheduling.
 
-   ```bash
-   terraform apply "k3s.tfplan"
-   #or
-   terraform apply "rke2.tfplan"
-   ```
+## 4. Deployment Workflow
 
-## Post-Installation
+1. **Initialize**: `terraform init -reconfigure`
+2. **Plan**: `terraform plan -var-file="<your_config>.tfvars" -out="cluster.tfplan"`
+3. **Apply**: `terraform apply "cluster.tfplan"`
 
-After the deployment is complete, the virtual machines will boot and start the provisioning process via Cloud-init.
+## 5. Post-Deployment
 
-To retrieve the `kubeconfig` file and start interacting with your cluster:
-
-1. SSH into the master node (using the IP defined in your `kube_nodes`).
-2. The config file is located at `/etc/rancher/k3s/k3s.yaml` (for K3s installations).
-
-## Infrastructure Deletion
-
-To remove all resources created in Proxmox:
-
-```bash
-terraform destroy -var-file="k3s.tfvars"
-#or
-terraform destroy -var-file="rke2.tfvars"
-```
-
----
-
-### Technical Notes (Based on your example)
-
-* **Storage**: Ensure the datastore defined in `proxmox_images_snippets_datastore` (default is `local`) allows both **ISO** and **Snippets** content types, as it is used for downloading the OS image and hosting Cloud-init configuration files.
-* **Networking**: The `network_bridge` value (typically `vmbr0`) must exist on the target Proxmox node.
+The infrastructure automatically generates a `k8s_config.yaml` file in the root directory. You can use it immediately:
+`export KUBECONFIG=$(pwd)/k8s_config.yaml && kubectl get nodes`
