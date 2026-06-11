@@ -780,9 +780,9 @@ resource "null_resource" "gateway_api_setup" {
 }
 
 ###############################################################################
-# STEP 4: DEPLOY CEPHFS CSI FOR RKE2
+# STEP 4: DEPLOY CEPH CSI FOR RKE2
 ###############################################################################
-resource "null_resource" "cephfs_csi_setup" {
+resource "null_resource" "ceph_csi_setup" {
   # Trigger only after the bootstrap server's control plane is fully verified
   for_each   = local.rke2_bootstrap_node_map
   depends_on = [null_resource.gateway_api_setup]
@@ -816,35 +816,47 @@ resource "null_resource" "cephfs_csi_setup" {
   provisioner "remote-exec" {
     inline = [
       "set -e",
-      "echo '📦 Deploying CEPH CSI into RKE2 kubernetes cluster...'",
+      "echo '📦 Deploying CEPH CSI (RBD + CephFS) into RKE2 kubernetes cluster...'",
       "echo '⚙️  Verifying RKE2 auto-deploy manifests directory...'",
       "sudo mkdir -p /var/lib/rancher/rke2/server/manifests",
 
       "echo '📦 Deploying Ceph CSI Secret and StorageClass...'",
       "sudo mv /tmp/07-ceph-csi-secret-storageclass.yaml /var/lib/rancher/rke2/server/manifests/07-ceph-csi-secret-storageclass.yaml",
-
+      
       # Create the HelmChart with integrated dynamic cluster configuration
-      "echo '📦 Deploying Ceph-CSI HelmChart manifest...'",
+      "echo '📦 Deploying Ceph CSI HelmChart manifest...'",
       "sudo mv /tmp/08-ceph-csi-helm.yaml /var/lib/rancher/rke2/server/manifests/08-ceph-csi-helm.yaml",
     
-      "echo '✅ CephFS CSI manifests successfully deployed to RKE2 manifests directory.'",
+      "echo '✅ Ceph CSI manifests successfully deployed to RKE2 manifests directory.'",
       
       "KCONF='/etc/rancher/rke2/rke2.yaml'",
       "echo \"⏳ Waiting for resources to exist in the API...\"",
+      "until sudo kubectl --kubeconfig $KCONF get daemonset/ceph-csi-rbd-nodeplugin -n kube-system > /dev/null 2>&1; do",
+        "echo \"  - daemonset ceph-csi-rbd-nodeplugin not created yet, waiting...\"",
+        "sleep 5",
+      "done",
+      "echo \"✅ daemonset ceph-csi-rbd-nodeplugin found...\"",
       "until sudo kubectl --kubeconfig $KCONF get daemonset/ceph-csi-cephfs-nodeplugin -n kube-system > /dev/null 2>&1; do",
         "echo \"  - daemonset ceph-csi-cephfs-nodeplugin not created yet, waiting...\"",
         "sleep 5",
       "done",
       "echo \"✅ daemonset ceph-csi-cephfs-nodeplugin found...\"",
+      "until sudo kubectl --kubeconfig $KCONF get deployment/ceph-csi-rbd-provisioner -n kube-system > /dev/null 2>&1; do",
+        "echo \"  - deployment ceph-csi-rbd-provisioner not created yet, waiting...\"",
+        "sleep 5",
+      "done",
+      "echo \"✅ deployment ceph-csi-rbd-provisioner found...\"",
       "until sudo kubectl --kubeconfig $KCONF get deployment/ceph-csi-cephfs-provisioner -n kube-system > /dev/null 2>&1; do",
         "echo \"  - deployment ceph-csi-cephfs-provisioner not created yet, waiting...\"",
         "sleep 5",
       "done",
       "echo \"✅ deployment ceph-csi-cephfs-provisioner found...\"",
-      
+
       "KCONF=/etc/rancher/rke2/rke2.yaml",
-      "echo '⏳ Validating csi-cephfs-cephfsplugin and ceph-csi-cephfs-provisioner deployment...'",
+      "echo '⏳ Validating csi-rbd-rbdplugin and ceph-csi-rbd-provisioner deployment...'",
+      "sudo kubectl --kubeconfig $KCONF rollout status daemonset/ceph-csi-rbd-nodeplugin  -n kube-system --timeout=600s",
       "sudo kubectl --kubeconfig $KCONF rollout status daemonset/ceph-csi-cephfs-nodeplugin  -n kube-system --timeout=600s",
+      "sudo kubectl --kubeconfig $KCONF rollout status deployment/ceph-csi-rbd-provisioner -n kube-system --timeout=600s",
       "sudo kubectl --kubeconfig $KCONF rollout status deployment/ceph-csi-cephfs-provisioner -n kube-system --timeout=600s",
       "echo '✅ Ceph CSI is Running & Ready.'",
       "sleep 10"

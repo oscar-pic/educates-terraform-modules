@@ -14,9 +14,9 @@ To execute the deployment, your local machine must satisfy:
 ## 2. Prerequisites: Proxmox Environment
 
 * **Permissions**: An API Token must be generated in Proxmox (`Datacenter` -> `Permissions` -> `API Tokens`). Required permissions include `PVEVMAdmin`, `PVEDatastoreAdmin`, and `PVEDataStoreAllocate`.
-* **Storage**:
-
-  * **Images & Snippets**: A datastore (e.g., `local` or `nfs-shared`) must be enabled for `ISO` and `Snippets` content. If you use local storage, the Terraform provider will use SSH to upload configuration files to each Proxmox node individually.
+* **Storage Configuration**:
+  * **Ceph Backends**: Before deployment, ensure both `RBD` (for block storage) and `CephFS` (for file system storage) pools are configured and active in your Proxmox Ceph cluster. These are prerequisites for the Kubernetes CSI drivers to function correctly.
+  * **Images & Snippets**: A datastore (e.g., `local` or `nfs-shared`) must be enabled for `ISO` and `Snippets` content.
   * **VM Disks**: For HA clusters, use a shared datastore (Ceph/NFS/ZFS) to allow VM migration.
 * **Network**:
   * **Management (`vmbr0`)**: Used for the VM default gateway and K8s API connectivity.
@@ -86,3 +86,20 @@ The `kube_nodes` map defines the VMs. Each entry must contain:
 
 The infrastructure automatically generates a `k8s_config.yaml` file in the root directory. You can use it immediately:
 `export KUBECONFIG=$(pwd)/k8s_config.yaml && kubectl get nodes`
+
+---
+
+### ⚠️ Operational Note: Ceph Storage Persistence & Cleanup
+
+When using `CephFS` and `RBD` as storage backends, it is crucial to understand how data lifecycle management works:
+
+* **Explicit StorageClass**: Since the cluster utilizes multiple backends, it is not recommended to set any `StorageClass` as the `default`. When creating a `PersistentVolumeClaim` (PVC), always specify the corresponding `storageClassName` (`proxmox-cephfs` or `proxmox-ceph-rbd`) to avoid binding errors.
+* **Deletion Lifecycle**: 
+    * The configuration uses `reclaimPolicy: Delete`. When you delete a PVC in Kubernetes, the CSI controller automatically requests the deletion of the volume in Ceph.
+    * **Important**: If a pod is still active or the volume remains "attached" to a node due to a network error or a blocked process, the CSI controller will be unable to delete the volume in Ceph immediately.
+* **Garbage Collection (Manual)**: If a subvolume appears in Ceph (`ceph fs subvolume ls cephfs_k8s csi`) but no longer has a corresponding PVC in Kubernetes, it means the volume has become orphaned. You can clean it up manually from the Proxmox node using:
+    ```bash
+    # Manual cleanup of orphaned volumes
+    ceph fs subvolume rm cephfs_k8s <subvolume_name> csi --force
+    ```
+* **Best Practice**: Before deleting a PVC (especially for `ReadWriteMany` volumes), scale your *Deployments* or *StatefulSets* to 0. This ensures the volume is unmounted cleanly, allowing the CSI driver to perform the automatic cleanup.
