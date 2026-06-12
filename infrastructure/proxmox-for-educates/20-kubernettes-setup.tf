@@ -854,6 +854,7 @@ resource "null_resource" "ceph_csi_setup" {
 
       "KCONF=/etc/rancher/rke2/rke2.yaml",
       "echo '⏳ Validating csi-rbd-rbdplugin and ceph-csi-rbd-provisioner deployment...'",
+      "sleep 10",
       "sudo kubectl --kubeconfig $KCONF rollout status daemonset/ceph-csi-rbd-nodeplugin  -n kube-system --timeout=600s",
       "sudo kubectl --kubeconfig $KCONF rollout status daemonset/ceph-csi-cephfs-nodeplugin  -n kube-system --timeout=600s",
       "sudo kubectl --kubeconfig $KCONF rollout status deployment/ceph-csi-rbd-provisioner -n kube-system --timeout=600s",
