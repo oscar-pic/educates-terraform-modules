@@ -23,6 +23,11 @@ terraform {
       source  = "loafoe/ssh"
       version = ">= 2.7.0"
     }
+    # Talos provider for Talos OS cluster management
+    talos = {
+      source  = "siderolabs/talos"
+      version = ">= 0.11.0"
+    }
   }
 }
 

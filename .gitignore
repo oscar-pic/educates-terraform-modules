@@ -55,6 +55,7 @@ Thumbs.db
 **/k8s_config.yaml
 **/k8s_config.tmp
 
-# Local certs and test directories
+# Local certs, deployment result files and test directories
 **/certs/*
+**/build/*
 **/test/*

@@ -20,7 +20,7 @@ locals {
   } : {}
 
   # Merge needed in some cases, for common resources. It will have only either k3s_bootstrap or rke2_bootstrap node
-  all_bootstrap_node_map = merge(local.k3s_bootstrap_node_map, local.rke2_bootstrap_node_map)
+  all_bootstrap_rke2_k3s_node_map = merge(local.k3s_bootstrap_node_map, local.rke2_bootstrap_node_map)
 
   # Filter out all the child nodes that need to be joined next on RKE2 deployment
   rke2_joiner_node_map = var.deployment_flavor == "rke2-cluster" ? {
@@ -39,6 +39,9 @@ locals {
     for k, v in local.all_nodes : k => v if v.type == "rke2-agent"
   } : {}
   rke2_has_workers  = length(local.rke2_worker_node_map) > 0
+
+  # New map to join all K3s and RKE2 nodes (leaving Talos out automatically)
+  rancher_linux_nodes_map = merge(local.k3s_bootstrap_node_map, local.rke2_bootstrap_node_map, local.rke2_joiner_node_map)
   
   # 1. Network context selector
   # We use a map to define the registration IP according to the flavor
@@ -57,15 +60,16 @@ locals {
 
   # 2. "Clean" final variables
   # Now we simply extract from the map based on the current flavor
-  rke2_registration_address     = local.network_config[var.deployment_flavor].registration_ip
-  kubeconfig_k8s_cluster_api_ip = local.network_config[var.deployment_flavor].api_ip
+  # 🛡️ Using try() avoids evaluation errors when deployment_flavor is "talos-cluster"
+  rke2_registration_address     = try(local.network_config[var.deployment_flavor].registration_ip, null)
+  kubeconfig_k8s_cluster_api_ip = try(local.network_config[var.deployment_flavor].api_ip, null)
 
 }
 
 ###############################################################################
 # STEP 1: BOOT AND VALIDATE THE BOOTSTRAP NODE (K3s or First Server RKE2)
 ###############################################################################
-resource "null_resource" "bootstrap_k3s" {
+resource "null_resource" "k3s_bootstrap" {
   for_each = local.k3s_bootstrap_node_map
 
   depends_on = [proxmox_virtual_environment_vm.kube_node]
@@ -120,7 +124,7 @@ resource "null_resource" "bootstrap_k3s" {
   }
 }
 
-resource "null_resource" "bootstrap_rke2" {
+resource "null_resource" "rke2_bootstrap" {
   for_each = local.rke2_bootstrap_node_map
 
   depends_on = [proxmox_virtual_environment_vm.kube_node]
@@ -308,12 +312,12 @@ resource "null_resource" "bootstrap_rke2" {
 ###############################################################################
 # STEP 2: JOIN THE ADDITIONAL NODES (RKE2 Multinode Only)
 ###############################################################################
-resource "null_resource" "join_rke2_cp" {
+resource "null_resource" "rke2_join_cp" {
   #for_each = local.rke2_joiner_node_map 
   for_each   = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-server" }
   
   # CRUCIAL: No node attempts to join until the Bootstrap is operational
-  depends_on = [null_resource.bootstrap_rke2]
+  depends_on = [null_resource.rke2_bootstrap]
   
     triggers = {
     # This ID will only change if the VM is destroyed and recreated
@@ -399,9 +403,9 @@ resource "null_resource" "join_rke2_cp" {
   }
 }
 
-resource "null_resource" "wait_rke2_cp_ready" {
+resource "null_resource" "rke2_wait_cp_ready" {
   for_each = local.rke2_bootstrap_node_map
-  depends_on = [null_resource.join_rke2_cp]
+  depends_on = [null_resource.rke2_join_cp]
 
   connection {
     type        = "ssh"
@@ -456,11 +460,11 @@ resource "null_resource" "wait_rke2_cp_ready" {
   }
 }
 
-resource "null_resource" "join_rke2_worker" {
+resource "null_resource" "rke2_join_worker" {
   for_each   = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-agent" }
   
   # CRUCIAL: No node attempts to join until the CPs are operational
-  depends_on = [null_resource.wait_rke2_cp_ready]
+  depends_on = [null_resource.rke2_wait_cp_ready]
   
     triggers = {
     # This ID will only change if the VM is destroyed and recreated
@@ -545,7 +549,7 @@ resource "null_resource" "join_rke2_worker" {
 # STEP 3: DEPLOY CERTIFICATES AND GATEWAY API (GW API ONLY FOR RKE2) 
 ###############################################################################
 resource "null_resource" "k3s_certificates_setup" {
-  depends_on = [null_resource.verify_cluster_health] # Because we are doing kubectl commands, we'll need to wait all core pods are running
+  depends_on = [null_resource.verify_rke2_k3s_cluster_health] # Because we are doing kubectl commands, we'll need to wait all core pods are running
   for_each   = local.k3s_bootstrap_node_map
   
   connection {
@@ -643,9 +647,9 @@ resource "null_resource" "k3s_certificates_setup" {
 }
 
 # Create the TLS secret for the Gateway API
-resource "null_resource" "gateway_api_certificates_setup" {
+resource "null_resource" "rke2_gateway_api_certificates_setup" {
   # Wait for RKE2 bootstrap to complete before deploying CRDs
-  depends_on = [null_resource.deploy_kube_vip_pod]
+  depends_on = [null_resource.rke2_deploy_kube_vip_pod]
   for_each   = local.rke2_bootstrap_node_map
 
   connection {
@@ -731,8 +735,8 @@ resource "null_resource" "gateway_api_certificates_setup" {
 }
 
 # Install the Gateway API
-resource "null_resource" "gateway_api_setup" {
-  depends_on = [null_resource.gateway_api_certificates_setup]
+resource "null_resource" "rke2_gateway_api_setup" {
+  depends_on = [null_resource.rke2_gateway_api_certificates_setup]
   for_each   = local.rke2_bootstrap_node_map
 
   connection {
@@ -782,10 +786,10 @@ resource "null_resource" "gateway_api_setup" {
 ###############################################################################
 # STEP 4: DEPLOY CEPH CSI FOR RKE2
 ###############################################################################
-resource "null_resource" "ceph_csi_setup" {
+resource "null_resource" "rke2_ceph_csi_setup" {
   # Trigger only after the bootstrap server's control plane is fully verified
   for_each   = local.rke2_bootstrap_node_map
-  depends_on = [null_resource.gateway_api_setup]
+  depends_on = [null_resource.rke2_gateway_api_setup]
   
   connection {
     type        = "ssh"
@@ -868,11 +872,11 @@ resource "null_resource" "ceph_csi_setup" {
 ###############################################################################
 # MAINTENANCE: SAFE REBOOT (Maintains your original logic for all nodes)
 ###############################################################################
-resource "ssh_resource" "k8s_config" {
-  for_each   = local.all_bootstrap_node_map
+resource "ssh_resource" "k8s_config_rke2_k3s" {
+  for_each   = local.all_bootstrap_rke2_k3s_node_map
   depends_on = [
-    null_resource.bootstrap_k3s,
-    null_resource.bootstrap_rke2
+    null_resource.k3s_bootstrap,
+    null_resource.rke2_bootstrap
   ]
 
   user        = each.value.vm_user
@@ -884,20 +888,20 @@ resource "ssh_resource" "k8s_config" {
   ]
 }
 
-resource "local_file" "save_kubeconfig" {
-  for_each = local.all_bootstrap_node_map
+resource "local_file" "save_kubeconfig_rke2_k3s" {
+  for_each = local.all_bootstrap_rke2_k3s_node_map
 
-  content  = ssh_resource.k8s_config[each.key].result
-  filename = "${path.module}/k8s_config.yaml"
+  content  = ssh_resource.k8s_config_rke2_k3s[each.key].result
+  filename = "${path.module}/build/k8s_config.yaml"
 }
 
-resource "null_resource" "reboot_node_needed" {
-  for_each = var.kube_nodes
+resource "null_resource" "reboot_rke2_k3s_node_needed" {
+  for_each = local.rancher_linux_nodes_map
 
   # It is executed once the cluster is fully deployed and configured
   depends_on = [
-    local_file.save_kubeconfig, 
-    null_resource.join_rke2_worker
+    local_file.save_kubeconfig_rke2_k3s, 
+    null_resource.rke2_join_worker
   ]
 
   provisioner "remote-exec" {
@@ -928,9 +932,9 @@ resource "null_resource" "reboot_node_needed" {
   }
 }
 
-resource "null_resource" "verify_service_status" {
-  for_each   = var.kube_nodes
-  depends_on = [null_resource.reboot_node_needed]
+resource "null_resource" "verify_rke2_k3s_service_status" {
+  for_each   = local.rancher_linux_nodes_map
+  depends_on = [null_resource.reboot_rke2_k3s_node_needed]
 
   connection {
     type        = "ssh"
@@ -963,9 +967,9 @@ resource "null_resource" "verify_service_status" {
   }
 }
 
-resource "null_resource" "verify_cluster_health" {
-  for_each   = local.all_bootstrap_node_map
-  depends_on = [null_resource.verify_service_status]
+resource "null_resource" "verify_rke2_k3s_cluster_health" {
+  for_each   = local.all_bootstrap_rke2_k3s_node_map
+  depends_on = [null_resource.verify_rke2_k3s_service_status]
 
   connection {
     type        = "ssh"
@@ -1020,9 +1024,9 @@ resource "null_resource" "verify_cluster_health" {
   }
 }
 
-resource "null_resource" "deploy_kube_vip_pod" {
+resource "null_resource" "rke2_deploy_kube_vip_pod" {
   for_each   = local.rke2_cp_node_map
-  depends_on = [null_resource.verify_cluster_health]
+  depends_on = [null_resource.verify_rke2_k3s_cluster_health]
 
   connection {
     type        = "ssh"

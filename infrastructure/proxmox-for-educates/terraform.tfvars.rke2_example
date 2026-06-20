@@ -20,6 +20,7 @@ k8s_gateway_api_lb_ip_range            = "192.168.80.50/26"
 
 # Storage & Images
 proxmox_images_snippets_datastore = {
+  # The datasotre has to permit both ISO and snippets content types, since we use it for both OS image and cloud-init snippets.
   name   = "nfs-shared"
   shared = true
 }
@@ -28,6 +29,7 @@ proxmox_vms_datastore    = {
   shared = true
 }
 
+# Leave the next two variables empty for Talos, as it will fetch the ISO from the Talos Factory data source.
 cloud_image_url        = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 proxmox_image_filename = "ubuntu-24.04-cloud.img"
 

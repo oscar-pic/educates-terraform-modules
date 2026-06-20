@@ -149,10 +149,36 @@ variable "system_timezone" {
   default     = "Europe/Madrid"
 }
 
+variable "talos_cluster_name" {
+  type        = string
+  description = "Talos Cluster Name"
+  default     = "talos-proxmox-cluster"
+}
+
+variable "talos_compiled_version" {
+  type        = string
+  description = "Talos Linux version to compile in the factory"
+  default     = "v1.13.4"
+}
+
+variable "talos_compiled_extensions" {
+  type        = list(string)
+  description = "List of official Siderolabs extensions to package in the ISO"
+  default = [
+    "siderolabs/qemu-guest-agent",
+    "siderolabs/util-linux-tools",
+    "siderolabs/intel-ucode"
+  ]
+}
+
 variable "kube_nodes" {
   description = "Unified node configuration"
   type = map(object({
     type                = string 
+    # Options: 
+    #   k3s   --> single-node-k3s
+    #   rke2  --> rke2-server-bootstrap, rke2-server, rke2-agent
+    #   talos --> talos-controlplane-bootstrap, talos-controlplane, talos-worker
     proxmox_host        = number
     mac_address         = optional (string, "")
     ip_address          = string
@@ -161,9 +187,9 @@ variable "kube_nodes" {
     network_bridge      = optional(string, "vmbr0")
     ceph_ip_address     = string
     ceph_network_bridge = optional(string, "vmbr1")
-    vm_user             = optional(string, "ubuntu")           # Default here
-    vm_password         = optional(string, "Ubuntu1!") # Default here
-    ssh_key_path        = optional(string, "~/.ssh/id_ed25519.pub") # Default here
+    vm_user             = optional(string, "ubuntu")
+    vm_password         = optional(string, "Ubuntu1!")
+    ssh_key_path        = optional(string, "~/.ssh/id_ed25519.pub")
     vm_cores            = optional(number, 4)
     vm_memory           = optional(number, 8192)
     vm_disk_size        = optional(number, 30)
