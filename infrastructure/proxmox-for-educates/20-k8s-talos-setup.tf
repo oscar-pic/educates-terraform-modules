@@ -55,6 +55,41 @@ data "talos_machine_configuration" "talos_config" {
   machine_type     = strcontains(each.value.type, "controlplane") ? "controlplane" : "worker"
   machine_secrets  = talos_machine_secrets.talos_cluster_secrets[0].machine_secrets
 
+  # config_patches = [
+  # # Usamos un heredoc de string en lugar de yamlencode para evitar que Terraform sanee el objeto
+  # <<-EOT
+  # machine:
+  #   install:
+  #     disk: /dev/sda
+  #     wipe: true
+  #   time:
+  #     disabled: false
+  #     servers:
+  #       - time.cloudflare.com
+  #       - pool.ntp.org
+  #   network:
+  #     hostname: ${each.key}
+  #     interfaces:
+  #       - interface: ${var.k8s_api_cp_interface}
+  #         addresses:
+  #           - ${each.value.ip_address}
+  #         routes:
+  #           - network: 0.0.0.0/0
+  #             gateway: ${each.value.gateway}
+  #         %{ if strcontains(each.value.type, "controlplane") }
+  #         vip:
+  #           ip: ${var.k8s_api_endpoint_vip}
+  #         %{ endif }
+  #         dhcp: false
+  # cluster:
+  #   network:
+  #     cni:
+  #       name: none
+  #   proxy:
+  #     disabled: true
+  # EOT
+  # ]
+
   config_patches = [
     yamlencode({
       machine = {
@@ -62,24 +97,23 @@ data "talos_machine_configuration" "talos_config" {
           disk = "/dev/sda" # Asegura que Talos instale el OS en el disco
           wipe = true
         }
-        # Configuración de NTP y Timezone
+        # NTP Configuration
         time = {
           disabled = false
           servers = ["time.cloudflare.com", "pool.ntp.org"]
-          #timezone = "Europe/Madrid"
         }
         network = {
           hostname = each.key
           interfaces = [
             {
-              interface = var.k8s_api_cp_interface # Red principal
+              interface = var.k8s_api_cp_interface
               addresses = [each.value.ip_address]
               routes    = [{ network = "0.0.0.0/0", gateway = each.value.gateway }]
-              vip       = each.value.type == "controlplane" ? { ip = var.k8s_api_endpoint_vip } : null
+              vip       = (strcontains(each.value.type, "controlplane") ? { ip = var.k8s_api_endpoint_vip } : null)
               dhcp      = false
             },
             {
-              interface = var.k8s_ceph_node_interface # Interfaz para Ceph
+              interface = var.k8s_ceph_node_interface
               dhcp      = false
               addresses = [each.value.ceph_ip_address]
               mtu       = 9000
@@ -91,11 +125,11 @@ data "talos_machine_configuration" "talos_config" {
       cluster = {
         network = {
           cni = {
-            name = "none" # Esto deshabilita el CNI por defecto (Flannel)
+            name = "none" # This disables the default CNI (Flannel) and allows you to use your own CNI plugin
           }
         }
         proxy = {
-          disabled = true # Esto deshabilita kube-proxy
+          disabled = true # This disables kube-proxy
         }
       }
     })
@@ -170,8 +204,6 @@ resource "null_resource" "wait_for_cluster_readiness" {
 
   provisioner "local-exec" {
     interpreter = local.interpreter
-    # Pasamos el comando directamente. 
-    # Al estar en un bloque separado, Terraform no se confunde con los operadores.
     command = <<EOT
       %{if local.is_windows}
       $nodes = @{ ${join("; ", [for k, v in var.kube_nodes : "'$k'='${split("/", v.ip_address)[0]}'"])} };
@@ -202,6 +234,55 @@ resource "null_resource" "wait_for_cluster_readiness" {
         sleep 10
       done
       %{endif}
+    EOT
+  }
+}
+
+provider "helm" {
+  kubernetes = {
+    config_path = "./build/k8s_config.yaml"
+    host        = "https://${local.talos_bootstrap_node_ip}:6443"
+    insecure    = true
+  }
+}
+
+resource "helm_release" "talos_cilium_setup" {
+  count      = local.is_talos_deployment ? 1 : 0
+  name       = "cilium"
+  repository = "https://helm.cilium.io/"
+  chart      = "cilium"
+  namespace  = "kube-system"
+  version    = "1.19.2"
+
+  values = [templatefile("${path.module}/templates/talos/cilium-chart.yaml.tftpl", {
+    network_device    = var.k8s_api_cp_interface 
+    operator_replicas = length(local.talos_cp_nodes) >= 3 ? 3 : 1
+    k8s_api_cp_ip     = local.talos_bootstrap_node_ip
+  })]
+
+  depends_on = [
+    talos_cluster_kubeconfig.kubeconfig_auth,
+    null_resource.wait_for_cluster_readiness
+  ]
+}
+
+resource "null_resource" "talos_wait_for_cilium" {
+  count      = local.is_talos_deployment ? 1 : 0
+  depends_on = [helm_release.talos_cilium_setup]
+
+  provisioner "local-exec" {
+    interpreter = local.interpreter
+    # We use the bootstrap node IP (-s) to ensure the connection before the VIP works
+    command = <<-EOT
+      echo "⏳ Waiting for Cilium operator to start..."
+      until kubectl --kubeconfig ./build/k8s_config.yaml \
+            -s https://${local.talos_bootstrap_node_ip}:6443 \
+            --insecure-skip-tls-verify \
+            rollout status deployment/cilium-operator -n kube-system --timeout=300s; do
+        echo "  - The operator is not ready yet, retrying..."
+        sleep 10
+      done
+      echo "✅ Cilium operational."
     EOT
   }
 }

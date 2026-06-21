@@ -157,7 +157,7 @@ resource "null_resource" "rke2_bootstrap" {
 
   # Upload Cilium config
   provisioner "file" {
-    content = templatefile("${path.module}/templates/02-cilium-chart.yaml.tftpl", {
+    content = templatefile("${path.module}/templates/rke2/02-cilium-chart.yaml.tftpl", {
       # If it's a single node, use 1 replica; otherwise, 3 for HA.
       operator_replicas = length(var.kube_nodes) == 1 ? 1 : 3
       network_device    = var.k8s_api_cp_interface

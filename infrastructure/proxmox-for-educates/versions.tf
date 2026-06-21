@@ -28,6 +28,11 @@ terraform {
       source  = "siderolabs/talos"
       version = ">= 0.11.0"
     }
+    # Helm provider for managing Helm charts on the cluster
+    helm = {
+      source  = "hashicorp/helm"
+      version = ">= 3.2.0"
+    }
   }
 }
 
