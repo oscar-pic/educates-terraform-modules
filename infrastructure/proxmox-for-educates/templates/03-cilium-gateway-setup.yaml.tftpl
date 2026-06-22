@@ -26,10 +26,6 @@ spec:
   nodeSelector:
     matchLabels:
       kubernetes.io/os: linux
-#  serviceSelector:
-#    matchExpressions:
-#      - key: "io.cilium/lb-ipam-ips"
-#        operator: Exists
   interfaces:
     - "${network_device}"
 ---

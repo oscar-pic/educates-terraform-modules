@@ -143,7 +143,7 @@ resource "null_resource" "rke2_bootstrap" {
 
   # Upload the configuration rendered specifically for the Bootstrap node
   provisioner "file" {
-    content = templatefile("${path.module}/templates/rke2-config.yaml.tftpl", {
+    content = templatefile("${path.module}/templates/k3s-rke2/rke2-config.yaml.tftpl", {
       cluster_token          = var.k8s_cluster_token
       registration_address   = local.rke2_registration_address
       vip_address            = var.k8s_api_endpoint_vip
@@ -157,7 +157,7 @@ resource "null_resource" "rke2_bootstrap" {
 
   # Upload Cilium config
   provisioner "file" {
-    content = templatefile("${path.module}/templates/rke2/02-cilium-chart.yaml.tftpl", {
+    content = templatefile("${path.module}/templates/k3s-rke2/02-cilium-chart.yaml.tftpl", {
       # If it's a single node, use 1 replica; otherwise, 3 for HA.
       operator_replicas = length(var.kube_nodes) == 1 ? 1 : 3
       network_device    = var.k8s_api_cp_interface
@@ -167,13 +167,13 @@ resource "null_resource" "rke2_bootstrap" {
 
   # Remove taint protection on Compac Cluster
   provisioner "file" {
-    content = templatefile("${path.module}/templates/01-taint-fixer.yaml.tftpl", {})
+    content = templatefile("${path.module}/templates/k3s-rke2/01-taint-fixer.yaml.tftpl", {})
     destination = "/tmp/01-taint-fixer.yaml"
   }
 
   # Upload Systemd Override
   provisioner "file" {
-    source      = "${path.module}/templates/rke2-override.service.tftpl"
+    source      = "${path.module}/templates/k3s-rke2/rke2-override.service.tftpl"
     destination = "/tmp/rke2-override.conf"
   }
 
@@ -221,7 +221,7 @@ resource "null_resource" "rke2_bootstrap" {
       "sudo sync",
       "sleep 5",
 
-      # 🚀 FIX 2: Patch systemd unit to enforce infinite retries if Docker Hub fails or limits pull requests
+      # 🚀 Patch systemd unit to enforce infinite retries if Docker Hub fails or limits pull requests
       "echo '⚙️  Patching RKE2 systemd service for aggressive automatic restarts...'",
       "sudo mkdir -p /etc/systemd/system/rke2-server.service.d",
       "sudo mv /tmp/rke2-override.conf /etc/systemd/system/rke2-server.service.d/override.conf",
@@ -236,7 +236,7 @@ resource "null_resource" "rke2_bootstrap" {
       "echo '⏳ Waiting for configuration file to be generated...'",
       "until  sudo test -f \"$KUBECONFIG_SOURCE\"; do sleep 5; done",
 
-      # 🚀 FIX 2: Create symlink safely after file assurance guarantees unpack state completion
+      # 🚀 Create symlink safely after file assurance guarantees unpack state completion
       "echo '⚙️  Creating safe global symlink for kubectl binary...'",
       "sudo ln -sf /var/lib/rancher/rke2/bin/kubectl /usr/local/bin/kubectl",
       
@@ -250,7 +250,7 @@ resource "null_resource" "rke2_bootstrap" {
       "echo '------------------------------------------------------------'",
       "echo '⏳ Waiting for Core Cluster API to become responsive...'",
       
-      # 🚀 FIX 2: Safe, loops-free validation utilizing native kubectl wait mechanics
+      # 🚀 Safe, loops-free validation utilizing native kubectl wait mechanics
       "export KUBECONFIG=/tmp/k8s_local.yaml",
       "sleep 20",
       
@@ -333,7 +333,7 @@ resource "null_resource" "rke2_join_cp" {
 
   # Upload the configuration rendered for the servers (CPs) and agents (workers) nodes
   provisioner "file" {
-    content = templatefile("${path.module}/templates/rke2-config.yaml.tftpl", {
+    content = templatefile("${path.module}/templates/k3s-rke2/rke2-config.yaml.tftpl", {
       cluster_token          = var.k8s_cluster_token
       registration_address   = local.rke2_registration_address
       vip_address            = var.k8s_api_endpoint_vip
@@ -347,13 +347,13 @@ resource "null_resource" "rke2_join_cp" {
 
   # Remove taint protection on Compac Cluster
   provisioner "file" {
-    content = templatefile("${path.module}/templates/01-taint-fixer.yaml.tftpl", {})
+    content = templatefile("${path.module}/templates/k3s-rke2/01-taint-fixer.yaml.tftpl", {})
     destination = "/tmp/01-taint-fixer.yaml"
   }
 
   # Upload Systemd Override
   provisioner "file" {
-    source      = "${path.module}/templates/rke2-override.service.tftpl"
+    source      = "${path.module}/templates/k3s-rke2/rke2-override.service.tftpl"
     destination = "/tmp/rke2-override.conf"
   }
 
@@ -480,7 +480,7 @@ resource "null_resource" "rke2_join_worker" {
 
   # Upload the configuration rendered for the servers (CPs) and agents (workers) nodes
   provisioner "file" {
-    content = templatefile("${path.module}/templates/rke2-config.yaml.tftpl", {
+    content = templatefile("${path.module}/templates/k3s-rke2/rke2-config.yaml.tftpl", {
       cluster_token          = var.k8s_cluster_token
       registration_address   = local.rke2_registration_address
       vip_address            = var.k8s_api_endpoint_vip
@@ -494,7 +494,7 @@ resource "null_resource" "rke2_join_worker" {
 
   # Upload Systemd Override
   provisioner "file" {
-    source      = "${path.module}/templates/rke2-override.service.tftpl"
+    source      = "${path.module}/templates/k3s-rke2/rke2-override.service.tftpl"
     destination = "/tmp/rke2-override.conf"
   }
 
@@ -560,7 +560,7 @@ resource "null_resource" "k3s_certificates_setup" {
   }
 
   provisioner "file" {
-    content     = templatefile("${path.module}/templates/k3s-traefik-config.yaml.tftpl", {
+    content     = templatefile("${path.module}/templates/k3s-rke2/k3s-traefik-config.yaml.tftpl", {
       secret_name = local.tls_secret_name
     })
     destination = "/tmp/k3s-traefik-config.yaml"
@@ -578,7 +578,7 @@ resource "null_resource" "k3s_certificates_setup" {
 
   # Self-signed Strategy
   provisioner "file" {
-    content     = templatefile("${path.module}/templates/cert-openssl-config.cnf.tftpl", {
+    content     = templatefile("${path.module}/templates/k3s-rke2/cert-openssl-config.cnf.tftpl", {
       primary_domain = var.k8s_apps_cert_domains[0],
       domains        = var.k8s_apps_cert_domains
     })
@@ -587,7 +587,7 @@ resource "null_resource" "k3s_certificates_setup" {
 
   # LetsEncrypt Strategy
   provisioner "file" {
-    content     = templatefile("${path.module}/templates/05-cert-manager-chart.yaml.tftpl", {})
+    content     = templatefile("${path.module}/templates/k3s-rke2/05-cert-manager-chart.yaml.tftpl", {})
     destination = "/tmp/05-cert-manager-chart.yaml"
   }
   provisioner "file" {
@@ -672,7 +672,7 @@ resource "null_resource" "rke2_gateway_api_certificates_setup" {
 
   # Self-signed Strategy
   provisioner "file" {
-    content     = templatefile("${path.module}/templates/cert-openssl-config.cnf.tftpl", {
+    content     = templatefile("${path.module}/templates/k3s-rke2/cert-openssl-config.cnf.tftpl", {
       primary_domain = var.k8s_apps_cert_domains[0],
       domains        = var.k8s_apps_cert_domains
     })
@@ -681,7 +681,7 @@ resource "null_resource" "rke2_gateway_api_certificates_setup" {
 
   # LetsEncrypt Strategy
   provisioner "file" {
-    content     = templatefile("${path.module}/templates/05-cert-manager-chart.yaml.tftpl", {})
+    content     = templatefile("${path.module}/templates/k3s-rke2/05-cert-manager-chart.yaml.tftpl", {})
     destination = "/tmp/05-cert-manager-chart.yaml"
   }
   provisioner "file" {
@@ -809,7 +809,7 @@ resource "null_resource" "rke2_ceph_csi_setup" {
 
   # Upload the template Ceph Storage Ceph CSI Helm
   provisioner "file" {
-    content = templatefile("${path.module}/templates/08-ceph-csi-helm.yaml.tftpl", {
+    content = templatefile("${path.module}/templates/k3s-rke2/08-ceph-csi-helm.yaml.tftpl", {
       clusterID          = var.proxmox_ceph_clusterID
       ceph_monitors_list = var.proxmox_nodes_ceph_IPs
       replica_count      = length(var.kube_nodes) == 1 ? 1 : 3
@@ -1038,7 +1038,7 @@ resource "null_resource" "rke2_deploy_kube_vip_pod" {
 
   # Upload kube-vip config
   provisioner "file" {
-    content = templatefile("${path.module}/templates/00-kube-vip.yaml.tftpl", {
+    content = templatefile("${path.module}/templates/k3s-rke2/00-kube-vip.yaml.tftpl", {
       vip_address   = var.k8s_api_endpoint_vip
       vip_interface = var.k8s_api_cp_interface
     })

@@ -15,8 +15,15 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
   ]
   
   agent { 
-    enabled = var.deployment_flavor == "talos-cluster" ? false : true
+    #enabled = var.deployment_flavor == "talos-cluster" ? false : true
+    enabled = true
+    trim    = true
     timeout = "15m"
+  }
+
+  # Needed for qemu-guest-agent
+  serial_device {
+    device = "socket"
   }
 
    cpu {

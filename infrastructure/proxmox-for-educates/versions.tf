@@ -33,6 +33,11 @@ terraform {
       source  = "hashicorp/helm"
       version = ">= 3.2.0"
     }
+    # Http provider to download files
+    http = {
+      source  = "hashicorp/http"
+      version = ">= 3.6.0"
+    }
   }
 }
 

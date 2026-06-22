@@ -89,7 +89,7 @@ resource "null_resource" "decompress_talos_image" {
   }
 }
 
-resource "null_resource" "prepare_clean_config" {
+resource "null_resource" "prepare_talos_clean_config" {
   for_each = var.deployment_flavor == "talos-cluster" ? var.kube_nodes : {}
   
   triggers = {
@@ -98,14 +98,15 @@ resource "null_resource" "prepare_clean_config" {
 
   provisioner "local-exec" {
     command = <<EOT
-      mkdir -p ${path.module}/build/config/original
-      mkdir -p ${path.module}/build/config/clean
+      mkdir -p ${path.module}/build/talos_nodeconf/original
+      mkdir -p ${path.module}/build/talos_nodeconf/clean
       
-      echo "${data.talos_machine_configuration.talos_config[each.key].machine_configuration}" > "${path.module}/build/config/original/${each.key}.yaml"
+      echo "${data.talos_machine_configuration.talos_config[each.key].machine_configuration}" > "${path.module}/build/talos_nodeconf/original/${each.key}.yaml"
       
       echo "${data.talos_machine_configuration.talos_config[each.key].machine_configuration}" | \
-      yq 'select(.kind != "HostnameConfig")' > "${path.module}/build/config/clean/${each.key}.yaml"
+      yq 'select(.kind != "HostnameConfig")' > "${path.module}/build/talos_nodeconf/clean/${each.key}.yaml"
     EOT
+    quiet = true
   }
 }
 
@@ -114,7 +115,7 @@ resource "null_resource" "create_talos_config_iso" {
 
   # Aseguramos que la configuración limpia existe antes de crear el ISO
   depends_on = [
-    null_resource.prepare_clean_config,
+    null_resource.prepare_talos_clean_config,
     proxmox_download_file.os_image
   ]
 
@@ -130,7 +131,7 @@ resource "null_resource" "create_talos_config_iso" {
   }
 
   provisioner "file" {
-    source      = "${path.module}/build/config/clean/${each.key}.yaml"
+    source      = "${path.module}/build/talos_nodeconf/clean/${each.key}.yaml"
     destination = "/tmp/user-data-${each.key}"
   }
 
@@ -175,6 +176,7 @@ resource "null_resource" "cleanup_talos_image" {
   provisioner "local-exec" {
     when    = destroy
     command = "ssh -i ${self.triggers.key_path} -o StrictHostKeyChecking=no root@${self.triggers.node} 'rm -f ${self.triggers.path}'"
+    quiet = true
   }
 }
 
@@ -190,6 +192,7 @@ resource "null_resource" "cleanup_node_isos" {
   provisioner "local-exec" {
     when    = destroy
     command = "ssh -i ${self.triggers.key_path} -o StrictHostKeyChecking=no root@${self.triggers.host} 'rm -f ${self.triggers.file_path}'"
+    quiet = true
   }
 }
 
@@ -213,7 +216,7 @@ resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
     var.proxmox_nodes[each.value.proxmox_host]
   )
   source_raw {
-    data = templatefile("${path.module}/templates/ubuntu-payload.tftpl", {
+    data = templatefile("${path.module}/templates/k3s-rke2/ubuntu-payload.tftpl", {
       hostname            = each.key
       deployment_flavor   = var.deployment_flavor
       timezone            = var.system_timezone
