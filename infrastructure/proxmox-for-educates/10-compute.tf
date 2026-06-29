@@ -2,7 +2,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
   # We use the flavor variable to control which nodes are created
   for_each = var.kube_nodes 
 
-  name      = each.key
+  name      = "${split("-", var.deployment_flavor)[0]}-${each.key}"
   node_name = var.proxmox_nodes[each.value.proxmox_host]
 
   lifecycle {
@@ -11,7 +11,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
 
   depends_on = [
     proxmox_download_file.os_image,
-    null_resource.create_talos_config_iso
+    null_resource.talos_create_config_iso
   ]
   
   agent { 
@@ -45,12 +45,10 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     type = "l26" # Linux Kernel 2.6+
   } 
 
-  #kvm_arguments = var.deployment_flavor == "talos-cluster" ? "-append 'talos.network.interface.listenv4=${each.value.ip_address} ip=${split("/", each.value.ip_address)[0]}::${each.value.gateway}:${cidrnetmask(each.value.ip_address)}:talos-cp-01:ens18:off'" : null
-
   # 🔀 Hybrid Evaluation of Chipset and BIOS
   # If it's Talos, use q35 and ovmf (UEFI), otherwise maintain i440fx and SeaBIOS (default)
-  machine = var.deployment_flavor == "talos-cluster" ? "q35" : ""
-  bios    = var.deployment_flavor == "talos-cluster" ? "ovmf" : ""
+  machine = var.deployment_flavor == "talos-cluster" ? "q35" : null
+  bios    = var.deployment_flavor == "talos-cluster" ? "ovmf" : null
 
   # 🔀 BOOT ORDER (The one you already had configured)
   # Talos boots from ISO (ide2) first to install, then from disk (scsi0).
@@ -70,7 +68,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
 
   # 🔀 Recommended SCSI controller for Talos
   # We apply the same criterio to avoid the 'single' mode (virtio-scsi-single) that causes issues during Talos bootstrap
-  scsi_hardware = var.deployment_flavor == "talos-cluster" ? "virtio-scsi-pci" : ""
+  scsi_hardware = var.deployment_flavor == "talos-cluster" ? "virtio-scsi-pci" : null
 
   disk {
     datastore_id = var.proxmox_vms_datastore.name
@@ -82,11 +80,6 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     # Dynamic interface assignment: Talos requires standard scsi0. Ubuntu maintains virtio0.
     interface    = var.deployment_flavor == "talos-cluster" ? "scsi0" : "virtio0"
 
-    # file_id = var.proxmox_images_snippets_datastore.shared ? (
-    #     proxmox_download_file.os_image[var.proxmox_nodes[0]].id
-    #   ) : (
-    #     proxmox_download_file.os_image[var.proxmox_nodes[each.value.proxmox_host]].id
-    #   )
     file_id = var.deployment_flavor == "talos-cluster" ? (
       var.proxmox_images_snippets_datastore.shared ? (
         # If SHARED, only the datastore name (the cluster knows the rest)
@@ -103,17 +96,6 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     )
   }
 
-  # dynamic "disk" {
-  #   for_each = var.deployment_flavor == "talos-cluster" ? [1] : []
-  #   content {
-  #     datastore_id = var.proxmox_vms_datastore.name
-  #     file_format  = "raw"
-  #     size         = 1 
-  #     interface    = "scsi1"
-  #     file_id      = proxmox_virtual_environment_file.talos_config[each.key].id
-  #   }
-  # }
-
   dynamic "cdrom" {
     for_each = var.deployment_flavor == "talos-cluster" ? [1] : []
     content {
@@ -122,7 +104,6 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
       file_id = "${var.proxmox_images_snippets_datastore.name}:iso/talos-config-${each.key}.iso"
     }
   }
-
 
   network_device {
     mac_address = lookup(each.value, "mac_address", null)
@@ -140,68 +121,54 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     }
   }
 
-  # initialization {
-  #   datastore_id      = "nfs-shared" # Make sure this datastore is the same where you upload your snippets
-  #   user_data_file_id = proxmox_virtual_environment_file.talos_config[each.key].id
-  #   interface         = "scsi1"
-  # }
-
   # --- CONDITIONAL CLOUD-INIT ISOLATION GUARD FOR UBUNTU ---
-#   dynamic "initialization" {
-#     for_each = var.deployment_flavor != "talos-cluster" ? [1] : []
-#     #for_each = [1]
-#     content {
-#       datastore_id        = var.proxmox_vms_datastore.name
-#       interface           = "scsi1"
-#       #interface = var.deployment_flavor != "talos-cluster" ? "scsi1" : null
-#       upgrade             = true
-#       #upgrade   = var.deployment_flavor != "talos-cluster" ? true : null
+  dynamic "initialization" {
+    for_each = var.deployment_flavor != "talos-cluster" ? [1] : []
+    #for_each = [1]
+    content {
+      datastore_id        = var.proxmox_vms_datastore.name
+      interface           = "scsi1"
+      #interface = var.deployment_flavor != "talos-cluster" ? "scsi1" : null
+      upgrade             = true
+      #upgrade   = var.deployment_flavor != "talos-cluster" ? true : null
 
-#       # Always use the flavor-aware snippet for Ubuntu/Debian nodes
-#       # (Unless it's Talos, which you'd handle at the resource/dynamic block level)
-#       vendor_data_file_id = proxmox_virtual_environment_file.ubuntu_flavor_config[each.key].id
-#       #vendor_data_file_id = var.deployment_flavor != "talos-cluster" ? proxmox_virtual_environment_file.ubuntu_flavor_config[each.key].id : null
+      # Always use the flavor-aware snippet for Ubuntu/Debian nodes
+      # (Unless it's Talos, which you'd handle at the resource/dynamic block level)
+      vendor_data_file_id = proxmox_virtual_environment_file.ubuntu_flavor_config[each.key].id
+      #vendor_data_file_id = var.deployment_flavor != "talos-cluster" ? proxmox_virtual_environment_file.ubuntu_flavor_config[each.key].id : null
 
-#       # Keep user_data NULL to protect your SSH keys!
-#       #user_data_file_id   = null
-#       user_data_file_id   = var.deployment_flavor == "talos-cluster" ? proxmox_virtual_environment_file.talos_config[each.key].id : null
+      # Keep user_data NULL to protect your SSH keys!
+      #user_data_file_id   = null
+      user_data_file_id   = var.deployment_flavor == "talos-cluster" ? data.talos_machine_configuration.talos_config[each.key].id : null
 
-#       # dynamic "ip_config" {
-#       #   for_each = var.deployment_flavor != "talos-cluster" ? [1] : []
-#       #   content {
-#       ip_config {
-#         ipv4 {
-#           address = each.value.ip_address
-#           gateway = each.value.gateway
-#         }
-#       }
-#       # dynamic "dns" {
-#       #   for_each = var.deployment_flavor != "talos-cluster" ? [1] : []
-#       #   content {
-#       dns {
-#         servers = each.value.dns_servers
-#       }
+      ip_config {
+        ipv4 {
+          address = each.value.ip_address
+          gateway = each.value.gateway
+        }
+      }
 
-#       dynamic "ip_config" {
-#         for_each = each.value.ceph_ip_address != "" ? [1] : []
-#         #for_each = (var.deployment_flavor != "talos-cluster" && each.value.ceph_ip_address != "") ? [1] : []
-#         content {
-#           ipv4 {
-#             address = "${each.value.ceph_ip_address}"
-#           }
-#         }
-#       }
+      dns {
+        servers = each.value.dns_servers
+      }
 
-#       # dynamic "user_account" {
-#       #   for_each = var.deployment_flavor != "talos-cluster" ? [1] : []
-#       #   content {
-#       user_account {
-#         username = each.value.vm_user
-#         password = each.value.vm_password
-#         keys     = [trimspace(file(pathexpand(each.value.ssh_key_path)))]
-#       }
-#     }
-#   }
+      dynamic "ip_config" {
+        for_each = each.value.ceph_ip_address != "" ? [1] : []
+        #for_each = (var.deployment_flavor != "talos-cluster" && each.value.ceph_ip_address != "") ? [1] : []
+        content {
+          ipv4 {
+            address = "${each.value.ceph_ip_address}"
+          }
+        }
+      }
+
+      user_account {
+        username = each.value.vm_user
+        password = each.value.vm_password
+        keys     = [trimspace(file(pathexpand(each.value.ssh_key_path)))]
+      }
+    }
+  }
 }
 
 resource "proxmox_haresource" "kube_node_ha" {

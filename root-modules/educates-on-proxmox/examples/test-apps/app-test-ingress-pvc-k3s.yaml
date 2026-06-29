@@ -1,0 +1,97 @@
+# ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-content
+  namespace: default
+data:
+  index.html: |
+    <h1>Everything is working!</h1>
+    <p>This file was automatically deployed via ConfigMap and InitContainer.</p>
+---
+# PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-pvc
+  namespace: default
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 100Mi}
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-app
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: test-web}
+  template:
+    metadata:
+      labels: {app: test-web}
+    spec:
+      initContainers:
+      - name: setup-data
+        image: busybox
+        command: ['sh', '-c', 'cp /tmp/index.html /usr/share/nginx/html/index.html']
+        volumeMounts:
+        - name: html-source
+          mountPath: /tmp
+        - name: data
+          mountPath: /usr/share/nginx/html
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html-source
+        configMap:
+          name: web-content
+      - name: data
+        persistentVolumeClaim:
+          claimName: test-pvc
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-svc
+  namespace: default
+spec:
+  selector: {app: test-web}
+  ports: [{port: 80, targetPort: 80}]
+---
+# Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: test-ingress
+  namespace: default
+  annotations:
+  # "traefik.ingress.kubernetes.io/router.middlewares": "default-redirect-to-https@kubernetescrd"
+  # Traefik will use the default TLS
+    "traefik.ingress.kubernetes.io/router.tls.options": "default"
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - test.k3s-app.axlab.inet
+    #secretName: traefik-default-cert
+  rules:
+  - host: test.k3s-app.axlab.inet
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: test-svc
+            port: {number: 80}

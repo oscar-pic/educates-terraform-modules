@@ -1,42 +1,42 @@
 terraform {
-  required_version = ">= 1.14.8"
+  # Minimum Terraform version required
+  required_version = ">= 1.15.2"
 
   required_providers {
+    # Proxmox provider for VM orchestration
     proxmox = {
       source  = "bpg/proxmox"
-      version = ">= 0.102.0"
+      version = ">= 0.106.0"
     }
-    http = {
-      source  = "hashicorp/http"
-      version = "~> 3.5.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 3.1.0"
-    }
-    kubectl = {
-      source  = "alekc/kubectl"
-      version = "~> 2.2.0"
-    }
-    # kubectl = {
-    #   source  = "gavinbunney/kubectl"
-    #   version = ">= 1.19.0"
-    # }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.2.1"
-    }
+    # Local provider to manage the kubeconfig file on the host machine
     local = {
       source  = "hashicorp/local"
-      version = ">= 2.8.0"
+      version = ">= 2.9.0"
     }
-    null = { # Added this for completeness
+    # Null provider for executing the K8s wait scripts (local-exec)
+    null = {
       source  = "hashicorp/null"
-      version = "~> 3.2.0"
+      version = "~> 3.2.4"
     }
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.13.1" # Or your preferred version
+    # To read files by SSH without local commands
+    ssh = {
+      source  = "loafoe/ssh"
+      version = ">= 2.7.0"
+    }
+    # Talos provider for Talos OS cluster management
+    talos = {
+      source  = "siderolabs/talos"
+      version = ">= 0.11.0"
+    }
+    # Helm provider for managing Helm charts on the cluster
+    helm = {
+      source  = "hashicorp/helm"
+      version = ">= 3.2.0"
+    }
+    # Http provider to download files
+    http = {
+      source  = "hashicorp/http"
+      version = ">= 3.6.0"
     }
   }
 }
@@ -44,41 +44,16 @@ terraform {
 provider "proxmox" {
   endpoint  = var.proxmox_endpoint
   api_token = var.proxmox_api_token
-  insecure  = true # Set to true if you use self-signed certificates
+  insecure  = true # Set to false if you have valid SSL certs for Proxmox
   ssh {
+    # Block to configure SSH access for Proxmox provider when needed (e.g., for file uploads, snippets or remote execution)
+    # If snippets datasotre is local, provider will force to use SSH to upload files. 
+    # If it's shared, it's recommended to use an NFS datastore and this ssh block can be commented out.
     agent       = false # Explicitly off
     username    = "root"
     private_key = file(var.ssh_private_key_path) # This is the "Key" (pun intended)
+    # Force the provider to bypass the Proxmox API and resolve proxmox nodes by local DNS. 
+    # It's to avoid that Proxmox API choose an incorrect IP for Proxmox node.
+    node_address_source = "dns"
   }
-}
-
-# Provider configurations using your local IP
-locals {
-  # Logic: Use override if set, otherwise pull the IP from the specific node key
-  nodes_list       = values(var.kube_nodes)
-  # This line now takes "192.168.1.29/24" and results in "192.168.1.29"
-  raw_endpoint     = var.k8s_api_endpoint_vip != "" ? var.k8s_api_endpoint_vip : local.nodes_list[0].ip_address
-  k8s_api_endpoint = split("/", local.raw_endpoint)[0]
-}
-
-provider "kubernetes" {
-  host     = "https://${local.k8s_api_endpoint}:6443"
-  #insecure = true
-  # This tells Terraform: "If the file isn't there yet, don't crash."
-  # config_path = fileexists("${path.module}/k8s_config.yaml") ? "${path.module}/k8s_config.yaml" : null
-  cluster_ca_certificate = base64decode(yamldecode(data.local_file.kubeconfig.content).clusters[0].cluster.certificate-authority-data)
-  client_certificate     = base64decode(yamldecode(data.local_file.kubeconfig.content).users[0].user.client-certificate-data)
-  client_key             = base64decode(yamldecode(data.local_file.kubeconfig.content).users[0].user.client-key-data)
-}
-
-provider "kubectl" {
-  host     = "https://${local.k8s_api_endpoint}:6443"
-  #insecure = true
-# 1. Load the CA Certificate
-  cluster_ca_certificate = base64decode(yamldecode(data.local_file.kubeconfig.content).clusters[0].cluster.certificate-authority-data)
-  # 2. Load the Client Certificate (instead of token)
-  client_certificate = base64decode(yamldecode(data.local_file.kubeconfig.content).users[0].user.client-certificate-data)
-  # 3. Load the Client Key
-  client_key = base64decode(yamldecode(data.local_file.kubeconfig.content).users[0].user.client-key-data)
-  load_config_file = false
 }

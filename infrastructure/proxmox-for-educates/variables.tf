@@ -1,9 +1,9 @@
 variable "deployment_flavor" {
   type        = string
-  description = "The type of deployment: 'single-node-k3s', 'rke2-cluster', or 'talos-cluster'"
+  description = "The type of deployment: 'k3s-single-node', 'rke2-cluster', or 'talos-cluster'"
   validation {
-    condition     = contains(["single-node-k3s", "rke2-cluster", "talos-cluster"], var.deployment_flavor)
-    error_message = "Flavor must be one of: single-node-k3s, rke2-cluster, talos-cluster."
+    condition     = contains(["k3s-single-node", "rke2-cluster", "talos-cluster"], var.deployment_flavor)
+    error_message = "Flavor must be one of: k3s-single-node, rke2-cluster, talos-cluster."
   }
 }
 
@@ -43,6 +43,22 @@ variable "k8s_cert_strategy" {
   # Let's Encrypt not tested yet
   type        = string
   default     = "provided"
+}
+
+variable "k8s_certs_path" {
+  description = "Absolute path to the directory containing wildcard.crt and wildcard.key"
+  type        = string
+  default     = "certs"
+
+  validation {
+    # If strategy is 'provided', path must not be empty and files must exist
+    condition = var.k8s_cert_strategy != "provided" || (
+      var.k8s_certs_path != "" && 
+      fileexists("${var.k8s_certs_path}/wildcard.crt") && 
+      fileexists("${var.k8s_certs_path}/wildcard.key")
+    )
+    error_message = "ERROR: When using 'provided' strategy, 'k8s_certs_path' must be set and contain both 'wildcard.crt' and 'wildcard.key'."
+  }
 }
 
 variable "k8s_apps_cert_domains" {
@@ -96,8 +112,8 @@ variable "proxmox_vms_datastore" {
     shared = bool
   })
   validation {
-    # If flavor is NOT single-node-k3s, shared MUST be true.
-    condition     = var.deployment_flavor == "single-node-k3s" || var.proxmox_vms_datastore.shared == true
+    # If flavor is NOT k3s-single-node, shared MUST be true.
+    condition     = var.deployment_flavor == "k3s-single-node" || var.proxmox_vms_datastore.shared == true
     error_message = "CRITICAL: For cluster deployments, the VM datastore MUST be shared (NFS/Ceph) to ensure HA and data persistence across nodes."
   }
 }
@@ -110,7 +126,7 @@ variable "cloud_image_url" {
 variable "proxmox_image_filename" {
   description = "The name of the file as it will appear in the Proxmox storage"
   type        = string
-  default     = "ubuntu-24.04-cloud.img"
+  default     = "ubuntu-24-cloud.img"
 }
 
 variable "k8s_api_endpoint_vip" {
@@ -176,7 +192,7 @@ variable "kube_nodes" {
   type = map(object({
     type                = string 
     # Options: 
-    #   k3s   --> single-node-k3s
+    #   k3s   --> k3s-single-node
     #   rke2  --> rke2-server-bootstrap, rke2-server, rke2-agent
     #   talos --> talos-controlplane-bootstrap, talos-controlplane, talos-worker
     proxmox_host        = number
@@ -204,6 +220,7 @@ variable "kube_nodes" {
 resource "null_resource" "validate_rke2_ha_requirements" {
   # This lifecycle precondition enforces deployment standards before touching Proxmox.
   # It evaluates cluster node topology against the presence of an API Virtual IP.
+  count = var.deployment_flavor == "rke2-cluster" ? 1 : 0
   lifecycle {
     precondition {
       condition = !(

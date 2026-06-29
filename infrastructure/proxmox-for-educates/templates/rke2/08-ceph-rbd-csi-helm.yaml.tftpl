@@ -1,0 +1,53 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: ceph-csi-rbd
+  namespace: kube-system
+spec:
+  chart: ceph-csi-rbd
+  repo: https://ceph.github.io/csi-charts
+  valuesContent: |
+    externallyManagedConfigmap: true
+    configMapName: "ceph-csi-config"
+    cephConfConfigMapName: "ceph-conf-rbd"
+    kmsConfigMapName: "ceph-csi-encryption-kms-config-rbd"
+    nodeplugin:
+      enableHostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+      httpMetrics:
+        enabled: false
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: role
+                operator: In
+                values:
+                - "worker"
+    provisioner:
+      enableHostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      httpMetrics:
+        enabled: false
+      replicaCount: ${replica_count}
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: role
+                operator: In
+                values:
+                - "worker"
+    csiConfig:
+      - clusterID: "${clusterID}"
+        monitors:
+%{ for node in ceph_monitors_list ~}
+          - "${node}:6789"
+%{ endfor ~}

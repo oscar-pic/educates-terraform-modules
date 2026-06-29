@@ -1,0 +1,161 @@
+deployment_flavor = "rke2-cluster"
+
+# Connection & Auth
+proxmox_nodes          = ["pve01", "pve02", "pve03"] # Array begins in position 0 
+# Leave next one empty for k3s-single-node; 
+proxmox_nodes_ceph_IPs = ["10.10.80.20", "10.10.80.21", "10.10.80.22"]
+proxmox_endpoint       = "https://192.168.80.200:8006/"
+proxmox_api_token      = "terraform-user@pve!TF-Token=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# Leave all ceph block variables empty for k3s-single-node
+proxmox_ceph_clusterID = "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxx"
+proxmox_ceph_k8s_key   = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+k8s_cert_strategy                      = "self-signed"               # Options: 'provided', 'self-signed', 'letsencrypt'. Let's Encrypt not tested yet
+k8s_certs_path                         = "certs"                     # It's only neccesary if k8s_cert_stragegy is "provided"
+k8s_apps_cert_domains                  = ["*.rke2-app.axlab.inet"]   # Must be a public domain for use with Let's Encrypt option
+k8s_letsencrypt_email                  = "admin@rke2-app.axlab.inet" # Only used with Let's Encrypt option
+k8s_letsencrypt_dns_provider_api_token = ""                          # Cloudflare, route53, google... Only used with Let's Encrypt option option
+# Leave Gateway API specific variable empty for k3s-single-node
+k8s_gateway_api_lb_ip_range            = "192.168.80.50/26"
+
+# Storage & Images
+proxmox_images_snippets_datastore = {
+  # The datasotre has to permit both ISO and snippets content types, since we use it for both OS image and cloud-init snippets.
+  name   = "nfs-shared"
+  shared = true
+}
+proxmox_vms_datastore    = {
+  name   = "ceph-shared"
+  shared = true
+}
+
+# Leave the next two variables empty for Talos, as it will fetch the ISO from the Talos Factory data source.
+cloud_image_url        = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+proxmox_image_filename = "ubuntu-24-cloud.img"
+
+# --- Variables for Talos Flavor. Leave empty for k3s-single-node or rke2-cluster ---
+talos_cluster_name     = ""
+talos_compiled_version = ""
+talos_compiled_extensions = []
+
+# SSH Path to connect to Proxmox nodes and to inject into the VMs.
+ssh_private_key_path = "~/.ssh/id_ed25519"
+
+# Leave those five empty for k3s-single-node 
+# Fill it only when you move to a multi-node cluster with a VIP, and an interface to configure this VIP.
+k8s_api_endpoint_vip    = "192.168.80.200"
+k8s_api_cp_interface    = "eth0"
+k8s_cluster_token       = "secret-xxxxxx-xxxx-xxxxxx"
+k8s_ceph_node_interface = "eth1"
+k8s_ceph_network_cidr   = "10.10.80.0/24"
+
+system_timezone = "Europe/Madrid"
+
+# Your Node Definition
+kube_nodes = {
+  "cp-01" = {
+    type                = "rke2-server-bootstrap" # Options --> rke2-server-bootstrap, rke2-server, rke2-agent
+    proxmox_host        = 0
+    #mac_address        = "BC:24:11:AA:BB:CC"
+    ip_address          = "192.168.80.201/24"
+    gateway             = "192.168.80.1" 
+    dns_servers         = ["8.8.8.8", "1.1.1.1"]
+    network_bridge      = "vmbr0"
+    # Leave Ceph variables empty for k3s-single-node
+    ceph_ip_address     = "10.10.80.201/24"
+    ceph_network_bridge = "vmbr1"
+    vm_user             = "ubuntu"
+    vm_password         = "Ubuntu1!"
+    ssh_key_path        = "~/.ssh/id_ed25519.pub"
+    vm_cores            = 4
+    vm_memory           = 16384
+    vm_disk_size        = 40
+    node_labels         = ["flavor=rke2-controlplane", "role=cp", "os=rke2"]
+  },
+  "cp-02" = {
+    type                = "rke2-server"
+    proxmox_host        = 1
+    ip_address          = "192.168.80.202/24"
+    gateway             = "192.168.80.1"
+    dns_servers         = ["8.8.8.8", "1.1.1.1"]
+    network_bridge      = "vmbr0"
+    ceph_ip_address     = "10.10.80.202/24"
+    ceph_network_bridge = "vmbr1"
+    vm_user             = "ubuntu"
+    vm_password         = "Ubuntu1!"
+    ssh_key_path        = "~/.ssh/id_ed25519.pub"
+    vm_cores            = 4
+    vm_memory           = 16384
+    vm_disk_size        = 40
+    node_labels         = ["flavor=rke2-controlplane", "role=cp", "os=rke2"]
+  },
+  "cp-03" = {
+    type                = "rke2-server"
+    proxmox_host        = 2
+    ip_address          = "192.168.80.203/24"
+    gateway             = "192.168.80.1"
+    dns_servers         = ["8.8.8.8", "1.1.1.1"]
+    network_bridge      = "vmbr0"
+    ceph_ip_address     = "10.10.80.203/24"
+    ceph_network_bridge = "vmbr1"
+    vm_user             = "ubuntu"
+    vm_password         = "Ubuntu1!"
+    ssh_key_path        = "~/.ssh/id_ed25519.pub"
+    vm_cores            = 4
+    vm_memory           = 16384
+    vm_disk_size        = 40
+    node_labels         = ["flavor=rke2-controlplane", "role=cp", "os=rke2"]
+  },
+  "worker-01" = {
+    type                = "rke2-agent"
+    proxmox_host        = 0
+    ip_address          = "192.168.80.204/24"
+    gateway             = "192.168.80.1"
+    dns_servers         = ["8.8.8.8", "1.1.1.1"]
+    network_bridge      = "vmbr0"
+    ceph_ip_address     = "10.10.80.204/24"
+    ceph_network_bridge = "vmbr1"  
+    vm_user             = "ubuntu"
+    vm_password         = "Ubuntu1!"
+    ssh_key_path        = "~/.ssh/id_ed25519.pub"
+    vm_cores            = 8
+    vm_memory           = 16384
+    vm_disk_size        = 60
+    node_labels         = ["flavor=rke2-worker", "role=worker", "os=rke2"]
+  },
+  "worker-02" = {
+    type                = "rke2-agent"
+    proxmox_host        = 1
+    ip_address          = "192.168.80.205/24"
+    gateway             = "192.168.80.1"
+    dns_servers         = ["8.8.8.8", "1.1.1.1"]
+    network_bridge      = "vmbr0"
+    ceph_ip_address     = "10.10.80.205/24"
+    ceph_network_bridge = "vmbr1"
+    vm_user             = "ubuntu"
+    vm_password         = "Ubuntu1!"
+    ssh_key_path        = "~/.ssh/id_ed25519.pub"
+    vm_cores            = 8
+    vm_memory           = 16384
+    vm_disk_size        = 60
+    node_labels         = ["flavor=rke2-worker", "role=worker", "os=rke2"]
+  },
+  "worker-03" = {
+    type                = "rke2-agent"
+    proxmox_host        = 2
+    ip_address          = "192.168.80.206/24"
+    gateway             = "192.168.80.1"
+    dns_servers         = ["8.8.8.8", "1.1.1.1"]
+    network_bridge      = "vmbr0"
+    ceph_ip_address     = "10.10.80.206/24"
+    ceph_network_bridge = "vmbr1"
+    vm_user             = "ubuntu"
+    vm_password         = "Ubuntu1!"
+    ssh_key_path        = "~/.ssh/id_ed25519.pub"
+    vm_cores            = 8
+    vm_memory           = 16384
+    vm_disk_size        = 60
+    node_labels         = ["flavor=rke2-worker", "role=worker", "os=rke2"]
+  }
+}

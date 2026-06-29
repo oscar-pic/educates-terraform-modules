@@ -28,4 +28,9 @@ runcmd:
     systemctl enable --now qemu-guest-agent || true
     systemctl start qemu-guest-agent || true
 
+    # Ensure that the rbd module is active in the Ubuntu Kernel
+    echo "Configuring Ceph kernel modules..."
+    modprobe rbd
+    echo "rbd" | tee -a /etc/modules
+
     echo "Setup complete. OS is ready for Terraform orchestration."
