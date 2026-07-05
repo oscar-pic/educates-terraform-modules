@@ -78,8 +78,8 @@ Cluster topologies and deployment strategies are managed via variable definition
 | `proxmox_ceph_k8s_key` | Base64-encoded authentication key for the `client.kubernetes` user. | `AQDQOg9q...==` |
 | `k8s_cert_strategy` | Certificate issuing automation logic. | `'self-signed'`, `'provided'`, or `'letsencrypt'` |
 | `k8s_certs_path` | Local workspace relative path containing custom TLS keys. | `"./certs"` |
-| `k8s_apps_cert_domains` | Target domains for routing rules (Required for Let's Encrypt). | `["*.k3s-app.axlab.inet"]` |
-| `k8s_letsencrypt_email` | Administrative email for ACME certificate renewal alerts. | `"admin@k3s-app.axlab.inet"` |
+| `k8s_apps_cert_domains` | Target domains for routing rules (Required for Let's Encrypt). | `["*.k3s-apps.lab.inet"]` |
+| `k8s_letsencrypt_email` | Administrative email for ACME certificate renewal alerts. | `"admin@k3s-apps.lab.inet"` |
 | `system_timezone` | Server hardware and OS instance regional timezone definition. | `"Europe/Madrid"` |
 
 ### D. Multi-Node Cluster & High Availability Network Variables

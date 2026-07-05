@@ -176,7 +176,7 @@ spec:
     # Specifies the sectionName corresponding to the 443/HTTPS listener
     sectionName: https 
   hostnames:
-  - "test-api-gw-pvc-rwo.rke2-app.axlab.inet"
+  - "test-api-gw-pvc-rwo.rke2-apps.lab.inet"
   rules:
     - matches:
       - path:

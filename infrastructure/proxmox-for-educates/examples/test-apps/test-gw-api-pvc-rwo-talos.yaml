@@ -158,7 +158,7 @@ spec:
     # Specifies the sectionName corresponding to the 443/HTTPS listener
     sectionName: https 
   hostnames:
-  - "test-api-gw-pvc-rwo.talos-app.axlab.inet"
+  - "test-api-gw-pvc-rwo.apps.lab.inet"
   rules:
     - matches:
       - path:

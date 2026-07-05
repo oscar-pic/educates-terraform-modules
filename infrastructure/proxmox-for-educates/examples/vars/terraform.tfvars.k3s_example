@@ -11,11 +11,11 @@ proxmox_api_token      = "terraform-user@pve!TF-Token=XXXXXXXXXXXXXXXXXXXXXXXXXX
 proxmox_ceph_clusterID = ""
 proxmox_ceph_k8s_key   = ""
 
-k8s_cert_strategy                      = "self-signed"              # Options: 'provided', 'self-signed', 'letsencrypt'. Let's Encrypt not tested yet
-k8s_certs_path                         = "certs"                    # It's only neccesary if k8s_cert_stragegy is "provided"
-k8s_apps_cert_domains                  = ["*.k3s-app.axlab.inet"]   # Must be a public domain for use with Let's Encrypt option
-k8s_letsencrypt_email                  = "admin@k3s-app.axlab.inet" # Only used with Let's Encrypt option
-k8s_letsencrypt_dns_provider_api_token = ""                         # Cloudflare, route53, google... Only used with Let's Encrypt option
+k8s_cert_strategy                      = "self-signed"             # Options: 'provided', 'self-signed', 'letsencrypt'. Let's Encrypt not tested yet
+k8s_certs_path                         = "certs"                   # It's only neccesary if k8s_cert_stragegy is "provided"
+k8s_apps_cert_domains                  = ["*.k3s-apps.lab.inet"]   # Must be a public domain for use with Let's Encrypt option
+k8s_letsencrypt_email                  = "admin@k3s-apps.lab.inet" # Only used with Let's Encrypt option
+k8s_letsencrypt_dns_provider_api_token = ""                        # Cloudflare, route53, google... Only used with Let's Encrypt option
 # Leave Gateway API specific variable empty for k3s-single-node
 k8s_gateway_api_lb_ip_range            = ""
 

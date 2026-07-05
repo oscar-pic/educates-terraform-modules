@@ -90,10 +90,10 @@ spec:
   ingressClassName: traefik
   tls:
   - hosts:
-    - test.k3s-app.axlab.inet
+    - test.k3s-apps.lab.inet
     #secretName: traefik-default-cert
   rules:
-  - host: test.k3s-app.axlab.inet
+  - host: test.k3s-apps.lab.inet
     http:
       paths:
       - path: /
