@@ -6,48 +6,35 @@ metadata:
 spec:
   chart: ceph-csi-cephfs
   repo: https://ceph.github.io/csi-charts
+  version: "3.17.0"
+  targetNamespace: ceph-system
+  createNamespace: true
+  timeout: 15m0s 
   valuesContent: |
     externallyManagedConfigmap: true
     configMapName: "ceph-csi-config"
     cephConfConfigMapName: "ceph-conf-cephfs"
     kmsConfigMapName: "ceph-csi-encryption-kms-config-cephfs"
     nodeplugin:
+      nodeSelector:
+        role: "worker"
       enableHostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      image:
+        pullPolicy: IfNotPresent
+      kubeletDir: /var/lib/kubelet
       tolerations:
         - operator: Exists
           effect: NoSchedule
       httpMetrics:
         enabled: false
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            preference:
-              matchExpressions:
-              - key: role
-                operator: In
-                values:
-                - "worker"
     provisioner:
+      nodeSelector:
+        role: "worker"
       enableHostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      image:
+        pullPolicy: IfNotPresent
       httpMetrics:
         enabled: false
       replicaCount: ${replica_count}
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            preference:
-              matchExpressions:
-              - key: role
-                operator: In
-                values:
-                - "worker"
-    csiConfig:
-      - clusterID: "${clusterID}"
-        monitors:
-%{ for node in ceph_monitors_list ~}
-          - "${node}:6789"
-%{ endfor ~}

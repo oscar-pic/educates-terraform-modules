@@ -34,7 +34,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: main-gateway
-  namespace: kube-system
+  namespace: gateway-system
   annotations:
     io.cilium/lb-ipam-ips: ""
 spec:
@@ -54,7 +54,7 @@ spec:
       certificateRefs:
       - name: ${secret_name}
         kind: Secret 
-        namespace: kube-system
+        namespace: gateway-system
     allowedRoutes:
       namespaces:
         from: All

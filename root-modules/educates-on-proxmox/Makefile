@@ -56,6 +56,12 @@ init: $(ARTIFACT_DIR)
 plan: init
 	@echo "--- Generating plan for $(FLAVOR) ---"
 	terraform plan -var-file=$(VARS_DIR)/$(FLAVOR).tfvars -out=$(ARTIFACT_DIR)/$(FLAVOR).tfplan
+	@echo ""
+	@echo "=========================================================="
+	@echo "Plan generated successfully."
+	@echo "To apply this plan, run:"
+	@echo "  make apply FLAVOR=$(FLAVOR)"
+	@echo "=========================================================="
 
 # Apply: Uses the artifact from the build directory
 apply: init

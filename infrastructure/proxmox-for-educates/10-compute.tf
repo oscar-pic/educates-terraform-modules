@@ -32,13 +32,15 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     # but requires identical CPUs in the cluster.
     # 🚀 CRITICAL UPDATE A: Force CPU type to 'host' for Talos as requested by documentation
     #type  = "x86-64-v2-AES" 
-    type = var.deployment_flavor == "talos-cluster" ? "host" : "x86-64-v2-AES"
+    #type = var.deployment_flavor == "talos-cluster" ? "host" : "x86-64-v2-AES"
+    type = "host"
   }
 
   memory { 
     dedicated = each.value.vm_memory 
     # 🚀 CRITICAL UPDATE B: Memory Ballooning settings for Talos stability
-    floating  = var.deployment_flavor == "talos-cluster" ? 0 : each.value.vm_memory
+    #floating  = var.deployment_flavor == "talos-cluster" ? 0 : each.value.vm_memory
+    floating = 0
   }
 
   operating_system { 
@@ -68,17 +70,20 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
 
   # 🔀 Recommended SCSI controller for Talos
   # We apply the same criterio to avoid the 'single' mode (virtio-scsi-single) that causes issues during Talos bootstrap
-  scsi_hardware = var.deployment_flavor == "talos-cluster" ? "virtio-scsi-pci" : null
+  #scsi_hardware = var.deployment_flavor == "talos-cluster" ? "virtio-scsi-pci" : "virtio-scsi-single"
+  scsi_hardware = "virtio-scsi-single"
 
   disk {
     datastore_id = var.proxmox_vms_datastore.name
     file_format  = var.deployment_flavor == "talos-cluster" ? "raw" : null
     size         = each.value.vm_disk_size
-    iothread     = var.deployment_flavor == "talos-cluster" ? null : true
+    #iothread     = var.deployment_flavor == "talos-cluster" ? false : true
+    iothread     = true
     discard      = "on"
 
     # Dynamic interface assignment: Talos requires standard scsi0. Ubuntu maintains virtio0.
-    interface    = var.deployment_flavor == "talos-cluster" ? "scsi0" : "virtio0"
+    #interface    = var.deployment_flavor == "talos-cluster" ? "scsi0" : "virtio0"
+    interface    = "scsi0"
 
     file_id = var.deployment_flavor == "talos-cluster" ? (
       var.proxmox_images_snippets_datastore.shared ? (

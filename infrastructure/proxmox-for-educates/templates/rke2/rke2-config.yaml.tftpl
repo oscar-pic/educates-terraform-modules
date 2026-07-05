@@ -7,7 +7,7 @@ token: "${cluster_token}"
 tls-san:
   - "127.0.0.1"
   - "${vip_address}"
-%{ for ip in nodes_ips ~}
+%{ for ip in cert_cp_ips ~}
   - "${ip}"
 %{ endfor ~}
 
@@ -16,6 +16,11 @@ kube-controller-manager-arg:
   - "cluster-cidr=10.42.0.0/16"
   - "service-cluster-ip-range=10.43.0.0/16"
   - "node-cidr-mask-size=24"
+
+etcd-arg:
+  - "heartbeat-interval=250"
+  - "election-timeout=1250"
+
 %{ endif }
 
 cni: "none"

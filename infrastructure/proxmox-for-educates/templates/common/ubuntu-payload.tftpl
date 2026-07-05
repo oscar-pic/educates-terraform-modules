@@ -10,6 +10,16 @@ ntp:
     - 1.es.pool.ntp.org
     - time.google.com
 
+write_files:
+  - path: /etc/sysctl.d/99-rke2-optimization.conf
+    content: |
+      net.core.rmem_max = 16777216
+      net.core.wmem_max = 16777216
+      net.ipv4.tcp_rmem = 4096 87380 16777216
+      net.ipv4.tcp_wmem = 4096 65536 16777216
+      vm.dirty_ratio = 10
+      vm.dirty_background_ratio = 5
+
 runcmd:
   - |
     #!/bin/bash
@@ -21,6 +31,9 @@ runcmd:
     while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
       sleep 5
     done
+
+    echo "Applying RKE2 optimization settings..."
+    sysctl -p /etc/sysctl.d/99-rke2-optimization.conf
 
     echo "Updating and installing baseline requirements..."
     apt-get update

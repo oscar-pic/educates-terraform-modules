@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: csi-ceph-rbd-secret
-  namespace: kube-system
+  namespace: ceph-system
 stringData:
   userID: "kubernetes"
   userKey: "${ceph_key}"
@@ -19,11 +19,11 @@ parameters:
   pool: "cephrbd_k8s"
   imageFeatures: layering
   csi.storage.k8s.io/provisioner-secret-name: csi-ceph-rbd-secret
-  csi.storage.k8s.io/provisioner-secret-namespace: kube-system
+  csi.storage.k8s.io/provisioner-secret-namespace: ceph-system
   csi.storage.k8s.io/node-stage-secret-name: csi-ceph-rbd-secret
-  csi.storage.k8s.io/node-stage-secret-namespace: kube-system
+  csi.storage.k8s.io/node-stage-secret-namespace: ceph-system
   csi.storage.k8s.io/controller-expand-secret-name: csi-ceph-rbd-secret
-  csi.storage.k8s.io/controller-expand-secret-namespace: kube-system
+  csi.storage.k8s.io/controller-expand-secret-namespace: ceph-system
   csi.storage.k8s.io/fstype: ext4
 reclaimPolicy: Delete
 allowVolumeExpansion: true
@@ -32,7 +32,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: csi-cephfs-secret
-  namespace: kube-system
+  namespace: ceph-system
 stringData:
   adminID: "kubernetes"
   adminKey: "${ceph_key}"
@@ -49,11 +49,11 @@ parameters:
   pool: "cephfs_k8s_data"
   csi.storage.k8s.io/fstype: cephfs
   csi.storage.k8s.io/provisioner-secret-name: csi-cephfs-secret
-  csi.storage.k8s.io/provisioner-secret-namespace: kube-system
+  csi.storage.k8s.io/provisioner-secret-namespace: ceph-system
   csi.storage.k8s.io/node-stage-secret-name: csi-cephfs-secret
-  csi.storage.k8s.io/node-stage-secret-namespace: kube-system
+  csi.storage.k8s.io/node-stage-secret-namespace: ceph-system
   csi.storage.k8s.io/controller-expand-secret-name: csi-cephfs-secret
-  csi.storage.k8s.io/controller-expand-secret-namespace: kube-system
+  csi.storage.k8s.io/controller-expand-secret-namespace: ceph-system
 reclaimPolicy: Delete
 allowVolumeExpansion: true
 volumeBindingMode: Immediate

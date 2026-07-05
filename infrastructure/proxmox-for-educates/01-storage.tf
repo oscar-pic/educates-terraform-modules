@@ -131,7 +131,7 @@ resource "null_resource" "talos_create_config_iso" {
   }
 
   provisioner "file" {
-    source      = "${path.root}/build/talos/nodeconf/clean/${each.key}.yaml"
+    source      = "${path.root}/build/talos/nodeconf/clean/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
     destination = "/tmp/user-data-${each.key}"
   }
 
@@ -218,6 +218,7 @@ resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
   source_raw {
     data = templatefile("${path.module}/templates/common/ubuntu-payload.tftpl", {
       hostname            = each.key
+      node_ip             = each.value.ip_address
       deployment_flavor   = var.deployment_flavor
       timezone            = var.system_timezone
       ceph_interface      = var.k8s_ceph_node_interface

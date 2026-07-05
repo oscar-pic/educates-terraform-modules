@@ -73,6 +73,15 @@ switch ($Action) {
     "plan" {
         Write-Host "--- Generating plan for $Flavor ---"
         terraform plan -var-file="vars/$Flavor.tfvars" -out="$ArtifactDir/$Flavor.tfplan"
+        # Check if the previous command was successful ($LASTEXITCODE 0 means success)
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host ""
+            Write-Host "==========================================================" -ForegroundColor Cyan
+            Write-Host "Plan generated successfully."
+            Write-Host "To apply this plan, run:"
+            Write-Host "  .\deploy.ps1 -Flavor $Flavor -Action apply"
+            Write-Host "==========================================================" -ForegroundColor Cyan
+        }
     }
     "apply" {
         Write-Host "--- Applying configuration for $Flavor ---"

@@ -122,7 +122,7 @@ kube_nodes = {
     vm_cores            = 8
     vm_memory           = 16384
     vm_disk_size        = 60
-    node_labels         = ["flavor=rke2-worker", "role=worker", "os=rke2"]
+    node_labels         = ["flavor=rke2-worker", "role=worker", "os=rke2", "storage-server=ceph-csi"]
   },
   "worker-02" = {
     type                = "rke2-agent"
@@ -139,7 +139,7 @@ kube_nodes = {
     vm_cores            = 8
     vm_memory           = 16384
     vm_disk_size        = 60
-    node_labels         = ["flavor=rke2-worker", "role=worker", "os=rke2"]
+    node_labels         = ["flavor=rke2-worker", "role=worker", "os=rke2", "storage-server=ceph-csi"]
   },
   "worker-03" = {
     type                = "rke2-agent"
@@ -156,6 +156,6 @@ kube_nodes = {
     vm_cores            = 8
     vm_memory           = 16384
     vm_disk_size        = 60
-    node_labels         = ["flavor=rke2-worker", "role=worker", "os=rke2"]
+    node_labels         = ["flavor=rke2-worker", "role=worker", "os=rke2", "storage-server=ceph-csi"]
   }
 }

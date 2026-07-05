@@ -12,7 +12,7 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: nginx-config
+  name: nginx-config-rwo
 data:
   default.conf: |
     server {
@@ -72,6 +72,13 @@ spec:
       - name: nginx
         # Using unprivileged image to comply with restricted security standards
         image: nginxinc/nginx-unprivileged:alpine
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
@@ -95,7 +102,7 @@ spec:
           claimName: test-pvc-rwo
       - name: config-vol
         configMap:
-          name: nginx-config
+          name: nginx-config-rwo
 ---
 # Service to expose the pod internally
 apiVersion: v1
@@ -105,54 +112,59 @@ metadata:
 spec:
   selector: {app: test-web-rwo}
   ports: [{port: 8080, targetPort: 8080}]
----
-# ReferenceGrant: Allow Route to attach to Gateway
-apiVersion: gateway.networking.k8s.io/v1beta1
-kind: ReferenceGrant
-metadata:
-  name: allow-default-namespace-rwo
-  namespace: kube-system
-spec:
-  from:
-  - group: gateway.networking.k8s.io
-    kind: HTTPRoute
-    namespace: default
-  to:
-  - group: gateway.networking.k8s.io
-    kind: Gateway
-    name: main-gateway
----
-# ReferenceGrant: Allow Gateway to access Service
-apiVersion: gateway.networking.k8s.io/v1beta1
-kind: ReferenceGrant
-metadata:
-  name: allow-gateway-to-backend-svc-rwo
-  namespace: default
-spec:
-  from:
-  - group: gateway.networking.k8s.io
-    kind: Gateway
-    namespace: kube-system
-  to:
-  - group: "" # Core group for Services
-    kind: Service
-    name: test-svc-rwo
+# ---
+# # ReferenceGrant: Allow Route to attach to Gateway
+# apiVersion: gateway.networking.k8s.io/v1beta1
+# kind: ReferenceGrant
+# metadata:
+#   name: allow-default-namespace-rwo
+#   namespace: kube-system
+# spec:
+#   from:
+#   - group: gateway.networking.k8s.io
+#     kind: HTTPRoute
+#     namespace: default
+#   to:
+#   - group: gateway.networking.k8s.io
+#     kind: Gateway
+#     name: main-gateway
+# ---
+# # ReferenceGrant: Allow Gateway to access Service
+# apiVersion: gateway.networking.k8s.io/v1beta1
+# kind: ReferenceGrant
+# metadata:
+#   name: allow-gateway-to-backend-svc-rwo
+#   namespace: default
+# spec:
+#   from:
+#   - group: gateway.networking.k8s.io
+#     kind: Gateway
+#     namespace: kube-system
+#   to:
+#   - group: "" # Core group for Services
+#     kind: Service
+#     name: test-svc-rwo
 ---
 # HTTPRoute to expose the service via Gateway API (TLS terminated at Gateway)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: web-route-rwo
+  namespace: default
 spec:
   parentRefs:
   - name: main-gateway
-    namespace: kube-system
+    namespace: gateway-system
     # Specifies the sectionName corresponding to the 443/HTTPS listener
     sectionName: https 
   hostnames:
   - "test-api-gw-pvc-rwo.rke2-app.axlab.inet"
   rules:
-  - backendRefs:
-    - name: test-svc-rwo
-    # Gateway handles SSL, so traffic is passed to the pod on port 8080
-      port: 8080
+    - matches:
+      - path:
+          type: PathPrefix
+          value: /
+      backendRefs:
+        - name: test-svc-rwo
+          # Gateway handles SSL, so traffic is passed to the pod on port 8080
+          port: 8080

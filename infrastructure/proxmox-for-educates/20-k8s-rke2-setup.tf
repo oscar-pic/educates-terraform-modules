@@ -5,7 +5,7 @@ locals {
   rke2_tls_secret_name = "gateway-api-default-cert"
 
   # Base Map 
-  rke2_all_nodes = var.kube_nodes
+  rke2_all_nodes       = var.kube_nodes
   rke2_number_of_nodes = length(var.kube_nodes)
 
   # Filter out which will be the bootstrap node in RKE2 deployment 
@@ -18,22 +18,27 @@ locals {
     for k, v in local.rke2_all_nodes : k => v if v.type == "rke2-server" || v.type == "rke2-agent"
   } : {}
 
+  # Indexed list of Workers to join (Filters only 'rke2-agent')
+  rke2_join_worker_list = [
+    for k, v in local.rke2_joiner_node_map : merge({ name = k }, v)
+    if v.type == "rke2-agent"
+  ]
+
   # Number of CP on RKE2 deployment
   rke2_cp_node_map = var.deployment_flavor == "rke2-cluster" ? {
     for k, v in local.rke2_all_nodes : k => v if v.type == "rke2-server" || v.type == "rke2-server-bootstrap"
   } : {}
-
   rke2_number_of_cp = length(local.rke2_cp_node_map)
 
   # Number of workers on RKE2 deployment
   rke2_worker_node_map = var.deployment_flavor == "rke2-cluster" ? {
     for k, v in local.rke2_all_nodes : k => v if v.type == "rke2-agent"
   } : {}
-  rke2_has_workers  = length(local.rke2_worker_node_map) > 0
+  rke2_has_workers = length(local.rke2_worker_node_map) > 0
 
   # New map to join all RKE2 nodes (leaving Talos out automatically)
   rancher_linux_nodes_map = merge(local.rke2_bootstrap_node_map, local.rke2_joiner_node_map)
-  
+
   # 1. Network context selector
   # We use a map to define the registration IP according to the flavor
   rke2_registration_ip = length(local.rke2_bootstrap_node_map) > 0 ? split("/", var.kube_nodes[keys(local.rke2_bootstrap_node_map)[0]].ip_address)[0] : ""
@@ -42,7 +47,7 @@ locals {
   # 2. "Clean" final variables
   # Now we simply extract from the map based on the current flavor
   # 🛡️ Using try() avoids evaluation errors when deployment_flavor is "talos-cluster"
-  rke2_registration_address     = try(local.rke2_registration_ip, null)
+  rke2_registration_address          = try(local.rke2_registration_ip, null)
   rke2_kubeconfig_k8s_cluster_api_ip = try(local.rke2_api_ip, null)
 
 }
@@ -75,7 +80,7 @@ resource "null_resource" "rke2_bootstrap" {
       vip_address            = var.k8s_api_endpoint_vip
       is_bootstrap           = true
       is_server              = true
-      nodes_ips              = [for k, v in var.kube_nodes : split("/", v.ip_address)[0] if contains(["rke2-server", "rke2-server-bootstrap"], v.type)]
+      cert_cp_ips            = [for k, v in var.kube_nodes : split("/", v.ip_address)[0] if contains(["rke2-server", "rke2-server-bootstrap"], v.type)]
       extra_node_labels_list = each.value.node_labels
     })
     destination = "/tmp/rke2-config.yaml"
@@ -93,7 +98,7 @@ resource "null_resource" "rke2_bootstrap" {
 
   # Remove taint protection on Compac Cluster
   provisioner "file" {
-    content = templatefile("${path.module}/templates/rke2/01-taint-fixer.yaml.tftpl", {})
+    content     = templatefile("${path.module}/templates/rke2/01-taint-fixer.yaml.tftpl", {})
     destination = "/tmp/01-taint-fixer.yaml"
   }
 
@@ -124,8 +129,12 @@ resource "null_resource" "rke2_bootstrap" {
 
       # 🚀 Global enforcement: No matter what happens below, this session only speaks production STABLE
       "export INSTALL_RKE2_CHANNEL='stable'",
+
       "echo '⚙️  Configuring RKE2 Bootstrap Server with custom Cilium setup...'",
       "sudo mkdir -p /var/lib/rancher/rke2/server/manifests",
+
+      "echo '📦 Preparing Cilium namespace via RKE2 manifest folder...'",
+      "printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: cilium-system\n' | sudo tee /var/lib/rancher/rke2/server/manifests/00-namespaces.yaml",
 
       "echo '⚙️  Injecting Cilium HelmChartConfig for kube-proxy replacement...'",
       "sudo mv /tmp/02-cilium-chart.yaml /var/lib/rancher/rke2/server/manifests/02-cilium-chart.yaml",
@@ -134,11 +143,11 @@ resource "null_resource" "rke2_bootstrap" {
       "  echo '⚙️  Remove taint protection on Compac Cluster with Control Planes only...'",
       "  sudo mv /tmp/01-taint-fixer.yaml /var/lib/rancher/rke2/server/manifests/01-taint-fixer.yaml",
       "fi",
-    
+
       "echo '⏳ Installing latest production stable RKE2 Server binary...'",
       # 🚀 Force sudo on the installer pipe
       "curl -sfL https://get.rke2.io | sudo INSTALL_RKE2_SKIP_START=true sh -", # 🌟 It automatically inherits the exported variable!
-      
+
       "echo '⏳ Waiting for the installer to write RKE2 components...'",
       "until [ -f /usr/local/bin/rke2 ]; do sleep 2; done",
 
@@ -165,7 +174,7 @@ resource "null_resource" "rke2_bootstrap" {
       # 🚀 Create symlink safely after file assurance guarantees unpack state completion
       "echo '⚙️  Creating safe global symlink for kubectl binary...'",
       "sudo ln -sf /var/lib/rancher/rke2/bin/kubectl /usr/local/bin/kubectl",
-      
+
       "echo 'Generating safe local and external deployment authority assets...'",
       "sudo cp \"$KUBECONFIG_SOURCE\" /tmp/k8s_local.yaml",
       "sudo cp \"$KUBECONFIG_SOURCE\" /tmp/k8s_external.yaml",
@@ -175,11 +184,11 @@ resource "null_resource" "rke2_bootstrap" {
 
       "echo '------------------------------------------------------------'",
       "echo '⏳ Waiting for Core Cluster API to become responsive...'",
-      
+
       # 🚀 Safe, loops-free validation utilizing native kubectl wait mechanics
       "export KUBECONFIG=/tmp/k8s_local.yaml",
       "sleep 20",
-      
+
       "echo '🚀 Local authority file initialized. Verifying cluster engine state...'",
       "/usr/local/bin/kubectl wait --for=condition=Ready nodes --all --timeout=420s || true",
 
@@ -189,41 +198,45 @@ resource "null_resource" "rke2_bootstrap" {
       "KCONF='/etc/rancher/rke2/rke2.yaml'",
       "CORE_TIMEOUT=300",
       "CORE_ELAPSED=0",
-      
+      "NAMESPACES='kube-system cilium-system'",
+
       "until [ \"$CORE_ELAPSED\" -ge \"$CORE_TIMEOUT\" ]; do",
       "  echo \"--- Iteration: $CORE_ELAPSED s ---\"",
-      
-      # Discover all relevant deployments dynamically
-      "  DEPLOYMENTS=$(sudo kubectl --kubeconfig $KCONF get deployments -n kube-system -o name | sed 's/deployment.apps\\///' | grep -E 'cilium|coredns')",
-      
+
       "  ALL_READY=true",
-      "  for DEPLOY in $DEPLOYMENTS; do",
-      "    # Get the number of ready replicas for the specific deployment",
-      "    READY_COUNT=$(sudo kubectl --kubeconfig $KCONF get deployment $DEPLOY -n kube-system -o jsonpath='{.status.readyReplicas}')",
-      
+      "  for NS in $NAMESPACES; do",
+      # Discover all relevant deployments dynamically
+      "    DEPLOYMENTS=$(sudo kubectl --kubeconfig $KCONF get deployments -n $NS -o name | sed 's/deployment.apps\\///' | grep -E 'cilium|coredns')",
+
+
+      "    for DEPLOY in $DEPLOYMENTS; do",
+      "      # Get the number of ready replicas for the specific deployment in $NS",
+      "      READY_COUNT=$(sudo kubectl --kubeconfig $KCONF get deployment $DEPLOY -n $NS -o jsonpath='{.status.readyReplicas}')",
+
       # If readyReplicas is null, it's 0
-      "    if [ -z \"$READY_COUNT\" ]; then READY_COUNT=0; fi",
-      
-      "    echo \"    -> Deployment '$DEPLOY': $READY_COUNT pod(s) Ready.\"",
-      
+      "      if [ -z \"$READY_COUNT\" ]; then READY_COUNT=0; fi",
+
+      "      echo \"    -> Deployment '$DEPLOY' (NS: $NS): $READY_COUNT pod(s) Ready.\"",
+
       # Enforcement: Must have at least 1 running pod for each discovered component
-      "    if [ \"$READY_COUNT\" -ge 1 ]; then",
-      "       echo \"      [OK]\"",
-      "    else",
-      "       echo \"      [WAIT]\"",
-      "       ALL_READY=false",
-      "    fi",
+      "      if [ \"$READY_COUNT\" -ge 1 ]; then",
+      "         echo \"      [OK]\"",
+      "      else",
+      "         echo \"      [WAIT]\"",
+      "         ALL_READY=false",
+      "      fi",
+      "    done",
       "  done",
-      
+
       "  if [ \"$ALL_READY\" = \"true\" ]; then",
       "    echo '✅ SUCCESS: All discovered core components are ready.'",
       "    break",
       "  fi",
-      
+
       "  sleep 10",
       "  CORE_ELAPSED=$((CORE_ELAPSED + 10))",
       "done",
-      
+
       # Final message when all components are confirmed
       "if [ \"$CORE_ELAPSED\" -lt \"$CORE_TIMEOUT\" ]; then",
       "  echo '✅ SUCCESS: All Cilium and CoreDNS components are healthy and fully operational. The Bootstrap is ready!'",
@@ -235,17 +248,174 @@ resource "null_resource" "rke2_bootstrap" {
   }
 }
 
+resource "ssh_resource" "k8s_config_rke2" {
+  for_each = local.rke2_bootstrap_node_map
+  depends_on = [
+    null_resource.rke2_bootstrap
+  ]
+
+  user        = each.value.vm_user
+  host        = split("/", each.value.ip_address)[0]
+  private_key = file(var.ssh_private_key_path)
+
+  commands = [
+    "cat /tmp/k8s_external.yaml"
+  ]
+}
+
+resource "local_file" "save_kubeconfig_rke2" {
+  for_each = local.rke2_bootstrap_node_map
+
+  content  = ssh_resource.k8s_config_rke2[each.key].result
+  filename = "${path.root}/build/${split("-", var.deployment_flavor)[0]}/k8s_config.yaml"
+}
+
 ###############################################################################
-# STEP 2: JOIN THE ADDITIONAL NODES (RKE2 Multinode Only)
+# STEP 2: DEPLOY CEPH CSI FOR RKE2
+###############################################################################
+resource "null_resource" "rke2_ceph_csi_setup" {
+  # Trigger only after the bootstrap server's control plane is fully verified
+  for_each   = local.rke2_bootstrap_node_map
+  depends_on = [null_resource.rke2_bootstrap]
+
+  connection {
+    type        = "ssh"
+    user        = each.value.vm_user
+    host        = split("/", each.value.ip_address)[0]
+    private_key = file(var.ssh_private_key_path)
+  }
+
+  # Upload the template Ceph Secret and StorageClass
+  provisioner "file" {
+    content = templatefile("${path.module}/templates/common/07-ceph-csi-requisites.yaml.tftpl", {
+      clusterID = var.proxmox_ceph_clusterID
+      ceph_key  = var.proxmox_ceph_k8s_key
+    })
+    destination = "/tmp/07-ceph-csi-requisites.yaml"
+  }
+
+  # Upload the template Ceph Storage Ceph RDB CSI Helm
+  provisioner "file" {
+    content = templatefile("${path.module}/templates/rke2/08-ceph-rbd-csi-helm.yaml.tftpl", {
+      replica_count = length(var.kube_nodes) == 1 ? 1 : 3
+    })
+    destination = "/tmp/08-ceph-rbd-csi-helm.yaml"
+  }
+
+  # Upload the template Ceph Storage Ceph FS CSI Helm
+  provisioner "file" {
+    content = templatefile("${path.module}/templates/rke2/09-ceph-fs-csi-helm.yaml.tftpl", {
+      replica_count = length(var.kube_nodes) == 1 ? 1 : 3
+    })
+    destination = "/tmp/09-ceph-fs-csi-helm.yaml"
+  }
+
+provisioner "remote-exec" {
+    inline = [
+      "set -e",
+      "KCONF='/etc/rancher/rke2/rke2.yaml'",
+
+      "echo '📦 Deploying CEPH CSI (RBD + CephFS) into RKE2 kubernetes cluster...'",
+      "echo '📦 Creating ceph-system namespace...'",
+      "sudo kubectl --kubeconfig $KCONF create namespace ceph-system --dry-run=client -o yaml | sudo kubectl --kubeconfig $KCONF apply -f -",
+      "RETRIES=0",
+      "until sudo kubectl --kubeconfig $KCONF get namespace ceph-system &>/dev/null || [ $RETRIES -eq 10 ]; do",
+      "  echo \"   -> Waiting for namespace ceph-system to be ready...\"",
+      "  sleep 3",
+      "  RETRIES=$((RETRIES+1))",
+      "done",
+      "if [ $RETRIES -eq 10 ]; then echo \"❌ ERROR: Namespace ceph-system not ready!\"; exit 1; fi",
+      "echo \"✅ Namespace ceph-system is ready.\"",
+
+      "echo '📦 Creating external Ceph CSI ConfigMap...'",
+      "sudo kubectl --kubeconfig $KCONF apply -f - <<EOF",
+      "apiVersion: v1",
+      "kind: ConfigMap",
+      "metadata:",
+      "  name: ceph-csi-config",
+      "  namespace: ceph-system",
+      "data:",
+      "  config.json: '[{\"clusterID\": \"${var.proxmox_ceph_clusterID}\", \"monitors\": [${join(",", [for node in var.proxmox_nodes_ceph_IPs : "\"${node}:6789\""])}]}]'",
+      "EOF",
+
+      "echo '⏳ Verifying ConfigMap propagation in API Server...'",
+      "until sudo kubectl --kubeconfig $KCONF get configmap/ceph-csi-config -n ceph-system > /dev/null 2>&1; do",
+      "  echo '  - ConfigMap not yet visible, retrying...'",
+      "  sleep 2",
+      "done",
+      "echo '✅ ConfigMap ceph-csi-config verified in API.'",
+
+      "echo '🚚 Applying Ceph CSI Secrets and StorageClasses...'",
+      "sudo kubectl --kubeconfig $KCONF apply -f /tmp/07-ceph-csi-requisites.yaml",
+
+      "echo '⏳ Waiting for Ceph CSI Secrets to be created by RKE2...'",
+      "until sudo kubectl --kubeconfig $KCONF get secret csi-ceph-rbd-secret -n ceph-system > /dev/null 2>&1; do",
+      "  echo '  - RBD Secret not created yet, waiting...'",
+      "  sleep 3",
+      "done",
+      "until sudo kubectl --kubeconfig $KCONF get secret csi-cephfs-secret -n ceph-system > /dev/null 2>&1; do",
+      "  echo '  - CephFS Secret not created yet, waiting...'",
+      "  sleep 3",
+      "done",
+      "echo '✅ Ceph CSI Secrets verified in API Server. Proceeding with RBD Helm chart...'",
+      
+      "echo '🚚 Deploying Ceph-RBD CSI HelmChart manifest...'",
+      "sudo kubectl --kubeconfig $KCONF apply -f /tmp/08-ceph-rbd-csi-helm.yaml",
+      "echo '✅ Ceph-RBD CSI manifests successfully applied via kubectl.'",
+      
+      "echo \"⏳ Verifying HelmChart object deployment in API...\"",
+      "until sudo kubectl --kubeconfig $KCONF get helmchart/ceph-csi-rbd -n kube-system > /dev/null 2>&1; do",
+      "  echo \"  - helmchart ceph-csi-rbd object not registered yet, waiting...\"",
+      "  sleep 3",
+      "done",
+      "echo '✅ Ceph-RBD CSI HelmChart accepted by API. Replicas will schedule as soon as workers join.'",
+
+      "echo \"⏳ Waiting for RBD resources to exist in the API...\"",
+      "until sudo kubectl --kubeconfig $KCONF get daemonset/ceph-csi-rbd-nodeplugin -n ceph-system > /dev/null 2>&1; do",
+      "  echo \"  - daemonset ceph-csi-rbd-nodeplugin not created yet, waiting...\"",
+      "  sleep 5",
+      "done",
+
+      #"echo '⏳ Validating ceph-csi-rbd-nodeplugin daemonset and ceph-csi-rbd-provisioner deployment...'",
+      #"sudo kubectl --kubeconfig $KCONF rollout status daemonset/ceph-csi-rbd-nodeplugin -n ceph-system --timeout=600s",
+      #"sudo kubectl --kubeconfig $KCONF rollout status deployment/ceph-csi-rbd-provisioner -n ceph-system --timeout=600s",
+      "echo '✅ Ceph-RBD NodePlugin CSI deployed, workers will join soon...'",
+      
+      "echo '🚚 Deploying Ceph-FS CSI HelmChart manifest...'",
+      "sudo kubectl --kubeconfig $KCONF apply -f /tmp/09-ceph-fs-csi-helm.yaml",
+      "echo '✅ Ceph-FS CSI manifests successfully applied via kubectl.'",
+
+      "echo \"⏳ Verifying HelmChart object deployment in API...\"",
+      "until sudo kubectl --kubeconfig $KCONF get helmchart/ceph-csi-cephfs -n kube-system > /dev/null 2>&1; do",
+      "  echo \"  - helmchart ceph-csi-cephfs object not registered yet, waiting...\"",
+      "  sleep 3",
+      "done",
+      "echo '✅ Ceph-FS CSI HelmChart accepted by API. Replicas will schedule as soon as workers join.'",
+
+      "echo \"⏳ Waiting for Ceph-FS resources to exist in the API...\"",
+      "until sudo kubectl --kubeconfig $KCONF get daemonset/ceph-csi-cephfs-nodeplugin -n ceph-system > /dev/null 2>&1; do",
+      "  echo \"  - daemonset ceph-csi-cephfs-nodeplugin not created yet, waiting...\"",
+      "  sleep 5",
+      "done",
+
+      #"echo '⏳ Validating ceph-csi-cephfs-nodeplugin daemonset and ceph-csi-cephfs-provisioner deployment...'",
+      #"sudo kubectl --kubeconfig $KCONF rollout status daemonset/ceph-csi-cephfs-nodeplugin -n ceph-system --timeout=600s",
+      #"sudo kubectl --kubeconfig $KCONF rollout status deployment/ceph-csi-cephfs-provisioner -n ceph-system --timeout=600s",
+      "echo '✅ Ceph-FS NodePlugin CSI deployed, workers will join soon...'"
+    ]
+  }
+}
+
+###############################################################################
+# STEP 3: JOIN THE ADDITIONAL NODES (RKE2 Multinode Only)
 ###############################################################################
 resource "null_resource" "rke2_join_cp" {
-  #for_each = local.rke2_joiner_node_map 
-  for_each   = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-server" }
-  
-  # CRUCIAL: No node attempts to join until the Bootstrap is operational
-  depends_on = [null_resource.rke2_bootstrap]
-  
-    triggers = {
+  for_each = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-server" }
+
+  # CRUCIAL: No node attempts to join until the Bootstrap an Ceph CSI are operational
+  depends_on = [null_resource.rke2_ceph_csi_setup]
+
+  triggers = {
     # This ID will only change if the VM is destroyed and recreated
     vm_id = proxmox_virtual_environment_vm.kube_node[each.key].id
   }
@@ -264,8 +434,8 @@ resource "null_resource" "rke2_join_cp" {
       registration_address   = local.rke2_registration_address
       vip_address            = var.k8s_api_endpoint_vip
       is_bootstrap           = false
-      is_server              = (each.value.type == "rke2-server") 
-      nodes_ips              = [for k, v in var.kube_nodes : split("/", v.ip_address)[0] if contains(["rke2-server", "rke2-server-bootstrap"], v.type)]
+      is_server              = true
+      cert_cp_ips            = [for k, v in var.kube_nodes : split("/", v.ip_address)[0] if contains(["rke2-server", "rke2-server-bootstrap"], v.type)]
       extra_node_labels_list = each.value.node_labels
     })
     destination = "/tmp/rke2-config.yaml"
@@ -273,7 +443,7 @@ resource "null_resource" "rke2_join_cp" {
 
   # Remove taint protection on Compac Cluster
   provisioner "file" {
-    content = templatefile("${path.module}/templates/rke2/01-taint-fixer.yaml.tftpl", {})
+    content     = templatefile("${path.module}/templates/rke2/01-taint-fixer.yaml.tftpl", {})
     destination = "/tmp/01-taint-fixer.yaml"
   }
 
@@ -303,7 +473,7 @@ resource "null_resource" "rke2_join_cp" {
       "fi",
       "echo '⏳ Installing and starting RKE2 Control Plane...'",
       "curl -sfL https://get.rke2.io | sudo INSTALL_RKE2_SKIP_START=true sh -",
-         
+
       # 🚀 Global enforcement for joiners
       "echo '⏳ Waiting for the installer to write RKE2 components...'",
       "until [ -f /usr/local/bin/rke2 ]; do sleep 2; done",
@@ -324,13 +494,14 @@ resource "null_resource" "rke2_join_cp" {
       "echo '⚙️  Creating safe global symlink for kubectl binary...'",
       "sudo ln -sf /var/lib/rancher/rke2/bin/kubectl /usr/local/bin/kubectl",
 
-      "echo '✅ Node joined successfully!'"
+      "echo '✅ Node ${each.key} joined successfully!'",
+      "sleep 10"
     ]
   }
 }
 
 resource "null_resource" "rke2_wait_cp_ready" {
-  for_each = local.rke2_bootstrap_node_map
+  for_each   = local.rke2_bootstrap_node_map
   depends_on = [null_resource.rke2_join_cp]
 
   connection {
@@ -349,7 +520,7 @@ resource "null_resource" "rke2_wait_cp_ready" {
       "echo '⏳ Waiting for API Server...'",
       "until sudo kubectl --kubeconfig $KCONF get nodes >/dev/null 2>&1; do sleep 5; done",
       "echo '✅ API Server is responding!'",
-      
+
       "echo '⏳ Waiting for ALL cluster nodes to report Ready...'",
       "NODE_TIMEOUT=300",
       "NODE_ELAPSED=0",
@@ -362,19 +533,26 @@ resource "null_resource" "rke2_wait_cp_ready" {
       "echo '✅ All CP nodes are Ready!'",
       "sleep 10",
 
-      "echo '⏳ Checking for Pod stability in kube-system...'",
+      "echo '⏳ Checking for Pod stability in core namespaces...'",
       "CORE_TIMEOUT=600",
       "CORE_ELAPSED=0",
+      "TARGET_NS='kube-system cilium-system'",
       "until [ \"$CORE_ELAPSED\" -ge \"$CORE_TIMEOUT\" ]; do",
-      "  BAD_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n kube-system --no-headers 2>/dev/null | grep -v 'helm-install' | grep -vE 'Running|Completed' | wc -l || echo 0)",
-      "  NOT_READY_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n kube-system --field-selector=status.phase=Running --no-headers 2>/dev/null | grep -v 'helm-install' | awk '$2 ~ /0\\// {print $0}' | wc -l || echo 0)",
-      
+      "  TOTAL_BAD=0",
+      "  TOTAL_NOT_READY=0",
+      "  for NS in $TARGET_NS; do",
+      "    BAD_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n $NS --no-headers 2>/dev/null | grep -v 'helm-install' | grep -vE 'Running|Completed' | wc -l || echo 0)",
+      "    NOT_READY_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n $NS--field-selector=status.phase=Running --no-headers 2>/dev/null | grep -v 'helm-install' | awk '$2 ~ /0\\// {print $0}' | wc -l || echo 0)",
+      "    TOTAL_BAD=$((TOTAL_BAD + BAD_PODS))",
+      "    TOTAL_NOT_READY=$((TOTAL_NOT_READY + NOT_READY_PODS))",
+      "  done",
+
       "  if [ \"$BAD_PODS\" -eq 0 ] && [ \"$NOT_READY_PODS\" -eq 0 ]; then",
       "    echo '✅ All core pods are Running/Completed and Ready!'",
       "    sleep 10",
       "    break",
       "  fi",
-      "  echo \"🔄 Waiting... (Bad: $BAD_PODS, Not-Ready: $NOT_READY_PODS). ($CORE_ELAPSED/$CORE_TIMEOUT s)\"",
+      "  echo \"🔄 Waiting... (Bad: $TOTAL_BAD, Not-Ready: $TOTAL_NOT_READY). ($CORE_ELAPSED/$CORE_TIMEOUT s)\"",
       "  sleep 15",
       "  CORE_ELAPSED=$((CORE_ELAPSED + 15))",
       "done",
@@ -387,20 +565,20 @@ resource "null_resource" "rke2_wait_cp_ready" {
 }
 
 resource "null_resource" "rke2_join_worker" {
-  for_each   = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-agent" }
-  
+  #for_each = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-agent" }
+  count = length(local.rke2_join_worker_list)
+
   # CRUCIAL: No node attempts to join until the CPs are operational
   depends_on = [null_resource.rke2_wait_cp_ready]
-  
-    triggers = {
-    # This ID will only change if the VM is destroyed and recreated
-    vm_id = proxmox_virtual_environment_vm.kube_node[each.key].id
+
+  triggers = {
+    vm_id = proxmox_virtual_environment_vm.kube_node[local.rke2_join_worker_list[count.index].name].id
   }
 
   connection {
     type        = "ssh"
-    user        = each.value.vm_user
-    host        = split("/", each.value.ip_address)[0]
+    user        = local.rke2_join_worker_list[count.index].vm_user
+    host        = split("/", local.rke2_join_worker_list[count.index].ip_address)[0]
     private_key = file(var.ssh_private_key_path)
   }
 
@@ -411,9 +589,9 @@ resource "null_resource" "rke2_join_worker" {
       registration_address   = local.rke2_registration_address
       vip_address            = var.k8s_api_endpoint_vip
       is_bootstrap           = false
-      is_server              = (each.value.type == "rke2-server") 
-      nodes_ips              = [for k, v in var.kube_nodes : split("/", v.ip_address)[0] if contains(["rke2-server", "rke2-server-bootstrap"], v.type)]
-      extra_node_labels_list = each.value.node_labels
+      is_server              = false
+      cert_cp_ips            = [for k, v in var.kube_nodes : split("/", v.ip_address)[0] if contains(["rke2-server", "rke2-server-bootstrap"], v.type)]
+      extra_node_labels_list = local.rke2_join_worker_list[count.index].node_labels
     })
     destination = "/tmp/rke2-config.yaml"
   }
@@ -433,13 +611,24 @@ resource "null_resource" "rke2_join_worker" {
       "sudo cloud-init status --wait || true",
       "echo '✅ Cloud-Init finished! OS is fully updated and unlocked.'",
 
+      # -----------------------------------------------------------------
+      # ⌛ DYNAMIC SERIALIZATION BLOCK USING COUNT.INDEX
+      # -----------------------------------------------------------------
+      "echo '⌛ Syncronizing the Workers Provisioning...'",
+      "SLEEP_TIME=$(( ${count.index} * 210 ))",
+      "if [ $SLEEP_TIME -gt 0 ]; then",
+      "  echo \"⏳ Active wait queue: This node will wait $SLEEP_TIME seconds before starting RKE2...\"",
+      "  sleep $SLEEP_TIME",
+      "fi",
+      # -----------------------------------------------------------------
+
       "export INSTALL_RKE2_CHANNEL='stable'",
       "sudo mkdir -p /etc/rancher/rke2",
       "sudo mv /tmp/rke2-config.yaml /etc/rancher/rke2/config.yaml",
       "if systemctl is-active --quiet rke2-agent; then echo '🛑 RKE2 already configured. Skipping.'; exit 0; fi",
       "echo '⏳ Installing and starting RKE2 Worker...'",
       "curl -sfL https://get.rke2.io | sudo INSTALL_RKE2_TYPE='agent' INSTALL_RKE2_SKIP_START=true sh -",
-         
+
       # 🚀 Global enforcement for joiners
       "echo '⏳ Waiting for the installer to write RKE2 components...'",
       "until [ -f /usr/local/bin/rke2 ]; do sleep 2; done",
@@ -459,21 +648,177 @@ resource "null_resource" "rke2_join_worker" {
       "sudo systemctl start rke2-agent.service",
       "echo '⚙️  Creating safe global symlink for kubectl binary...'",
       "sudo ln -sf /var/lib/rancher/rke2/bin/kubectl /usr/local/bin/kubectl",
-      
+
       "echo '⏳ Waiting for Kubelet healthz endpoint...'",
       "until curl -s http://127.0.0.1:10248/healthz | grep -q 'ok'; do",
       "  echo '🔄 Kubelet local is not ready yet...'",
       "  sleep 10",
       "done",
-      "echo '✅ Node ${each.key} joined successfully!'",
+
+      "echo '✅ Node ${local.rke2_join_worker_list[count.index].name} joined successfully!'",
       "sleep 10"
     ]
   }
 }
 
 ###############################################################################
-# STEP 3: DEPLOY CERTIFICATES AND GATEWAY API 
+# STEP 4: MAINTENANCE: Check Cluster Health and Reboot Requirements
 ###############################################################################
+resource "null_resource" "rke2_verify_service_status" {
+  for_each   = local.rancher_linux_nodes_map
+  depends_on = [null_resource.rke2_join_worker]
+
+  connection {
+    type        = "ssh"
+    user        = each.value.vm_user
+    host        = split("/", each.value.ip_address)[0]
+    private_key = file(var.ssh_private_key_path)
+    timeout     = "12m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -e",
+      "SERVICE_NAME='${each.value.type == "rke2-agent" ? "rke2-agent" : "rke2-server"}'",
+
+      "echo \"⏳ Waiting for $SERVICE_NAME to start...\"",
+      "TIMEOUT=300",
+      "ELAPSED=0",
+      "until sudo systemctl is-active --quiet \"$SERVICE_NAME\"; do",
+      "  if [ \"$ELAPSED\" -ge \"$TIMEOUT\" ]; then",
+      "    echo \"❌ ERROR: Kubernetes service ($SERVICE_NAME) failed to start within $TIMEOUT seconds.\"",
+      "    exit 1",
+      "  fi",
+      "  echo \"🔄 Service '$SERVICE_NAME' is still initializing... ($ELAPSED/$TIMEOUT s)\"",
+      "  sleep 10",
+      "  ELAPSED=$((ELAPSED + 10))",
+      "done",
+      "echo \"✅ Systemd service ($SERVICE_NAME) is ACTIVE!\"",
+      "sleep 10"
+    ]
+  }
+}
+
+resource "null_resource" "rke2_verify_cluster_health" {
+  for_each   = local.rke2_bootstrap_node_map
+  depends_on = [null_resource.rke2_verify_service_status]
+
+  connection {
+    type        = "ssh"
+    user        = each.value.vm_user
+    host        = split("/", each.value.ip_address)[0]
+    private_key = file(var.ssh_private_key_path)
+    timeout     = "12m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -e",
+      "KCONF='/etc/rancher/rke2/rke2.yaml'",
+
+      "echo '⏳ Waiting for API Server...'",
+      "until sudo kubectl --kubeconfig $KCONF get nodes >/dev/null 2>&1; do sleep 5; done",
+      "echo '✅ API Server is responding!'",
+
+      "echo '⏳ Waiting for ALL cluster nodes to report Ready...'",
+      "NODE_TIMEOUT=300",
+      "NODE_ELAPSED=0",
+      "until [ \"$(sudo kubectl --kubeconfig $KCONF get nodes -o jsonpath='{.items[*].status.conditions[?(@.type==\"Ready\")].status}' | grep -o 'True' | wc -l)\" -eq \"${local.rke2_number_of_nodes}\" ]; do",
+      "  if [ \"$NODE_ELAPSED\" -ge \"$NODE_TIMEOUT\" ]; then echo '❌ Error: Timeout waiting for nodes.'; exit 1; fi",
+      "  echo '🔄 Waiting for all nodes to be Ready...'",
+      "  sleep 10",
+      "  NODE_ELAPSED=$((NODE_ELAPSED + 10))",
+      "done",
+      "echo '✅ All nodes are Ready!'",
+      "sleep 10",
+
+      "echo '⏳ Checking for Pod stability in core namespaces...'",
+      "CORE_TIMEOUT=600",
+      "CORE_ELAPSED=0",
+      "TARGET_NS='kube-system cilium-system ceph-system'",
+      "until [ \"$CORE_ELAPSED\" -ge \"$CORE_TIMEOUT\" ]; do",
+      "  TOTAL_BAD=0",
+      "  TOTAL_NOT_READY=0",
+      "  for NS in $TARGET_NS; do",
+      "    BAD_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n $NS --no-headers 2>/dev/null | grep -v 'helm-install' | grep -vE 'Running|Completed' | wc -l || echo 0)",
+      "    NOT_READY_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n $NS--field-selector=status.phase=Running --no-headers 2>/dev/null | grep -v 'helm-install' | awk '$2 ~ /0\\// {print $0}' | wc -l || echo 0)",
+      "    TOTAL_BAD=$((TOTAL_BAD + BAD_PODS))",
+      "    TOTAL_NOT_READY=$((TOTAL_NOT_READY + NOT_READY_PODS))",
+      "  done",
+
+      "  if [ \"$BAD_PODS\" -eq 0 ] && [ \"$NOT_READY_PODS\" -eq 0 ]; then",
+      "    echo '✅ All core pods are Running/Completed and Ready!'",
+      "    sleep 10",
+      "    break",
+      "  fi",
+      "  echo \"🔄 Waiting... (Bad: $TOTAL_BAD, Not-Ready: $TOTAL_NOT_READY). ($CORE_ELAPSED/$CORE_TIMEOUT s)\"",
+      "  sleep 15",
+      "  CORE_ELAPSED=$((CORE_ELAPSED + 15))",
+      "done",
+      "if [ \"$CORE_ELAPSED\" -ge \"$CORE_TIMEOUT\" ]; then",
+      "  echo '⚠️   WARNING: Core pods are taking longer than expected to report Ready.'",
+      "  sleep 10",
+      "fi"
+    ]
+  }
+}
+
+###############################################################################
+# STEP 5: DEPLOY KUBE-VIP, CERTIFICATES, GATEWAY API AND REBOOT NEEDED
+###############################################################################
+resource "null_resource" "rke2_deploy_kube_vip_pod" {
+  for_each   = local.rke2_cp_node_map
+  depends_on = [null_resource.rke2_verify_cluster_health]
+
+  connection {
+    type        = "ssh"
+    user        = each.value.vm_user
+    host        = split("/", each.value.ip_address)[0]
+    private_key = file(var.ssh_private_key_path)
+    timeout     = "10m"
+  }
+
+  # Upload kube-vip config
+  provisioner "file" {
+    content = templatefile("${path.module}/templates/rke2/00-kube-vip.yaml.tftpl", {
+      vip_address   = var.k8s_api_endpoint_vip
+      vip_interface = var.k8s_api_cp_interface
+    })
+    destination = "/tmp/00-kube-vip.yaml"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -e",
+      "if [ ! -z \"${var.k8s_api_endpoint_vip}\" ]; then",
+      "  KCONF=/etc/rancher/rke2/rke2.yaml",
+      # If there is an explicit VIP in the variables, we activate the Kube-VIP balancer.
+      "  echo '📦 Pre-loading Kube-VIP Manifest for Control Plane HA...'",
+      "  sudo curl -sL https://kube-vip.io/manifests/rbac.yaml -o /var/lib/rancher/rke2/server/manifests/00-kube-vip-rbac.yaml",
+      "  sleep 5",
+      # 🚀 BULLETPROOF HA SOLUTION: Writing the exact, tested Kube-VIP Control Plane manifest
+      "  echo '📦 Configuring Kube-VIP Pod Manifest for Control Plane HA...'",
+      "  sudo mv /tmp/00-kube-vip.yaml /var/lib/rancher/rke2/server/manifests/00-kube-vip.yaml",
+      "  echo \"⏳ Waiting for resources to exist in the API...\"",
+      "  until sudo kubectl --kubeconfig $KCONF get ClusterRoleBinding system:kube-vip-binding -n kube-system > /dev/null 2>&1; do",
+      "    echo \"  - ClusterRoleBinding system:kube-vip-binding not created yet, waiting...\"",
+      "    sleep 5",
+      " done",
+      " echo \"✅ ClusterRoleBinding system:kube-vip-binding found...\"",
+      # 🚀 Wait Pod be Running & Ready
+      "  echo '⏳ Waiting for kube-vip pod to be Running and Ready...'",
+
+      "  until [ \"$(sudo kubectl --kubeconfig $KCONF get pod kube-vip -n kube-system -o jsonpath='{.status.containerStatuses[0].ready}')\" = \"true\" ]; do",
+      "    echo '🔄 Kube-VIP pod is initializing...'",
+      "    sleep 5",
+      "  done",
+      "  echo '✅ Kube-VIP is Ready!'",
+      "fi",
+      "sleep 10"
+    ]
+  }
+}
+
 # Create the TLS secret for the Gateway API
 resource "null_resource" "rke2_gateway_api_certificates_setup" {
   # Wait for RKE2 bootstrap to complete before deploying CRDs
@@ -500,7 +845,7 @@ resource "null_resource" "rke2_gateway_api_certificates_setup" {
 
   # Self-signed Strategy
   provisioner "file" {
-    content     = templatefile("${path.module}/templates/common/cert-openssl-config.cnf.tftpl", {
+    content = templatefile("${path.module}/templates/common/cert-openssl-config.cnf.tftpl", {
       primary_domain = var.k8s_apps_cert_domains[0],
       domains        = var.k8s_apps_cert_domains
     })
@@ -513,10 +858,10 @@ resource "null_resource" "rke2_gateway_api_certificates_setup" {
     destination = "/tmp/05-cert-manager-chart.yaml"
   }
   provisioner "file" {
-    content     = templatefile("${path.module}/templates/common/06-cert-letsencrypt-setup.yaml.tftpl", { 
+    content = templatefile("${path.module}/templates/common/06-cert-letsencrypt-setup.yaml.tftpl", {
       cert_object_name = "gateway-cert"
       secret_name      = local.rke2_tls_secret_name
-      email            = var.k8s_letsencrypt_email 
+      email            = var.k8s_letsencrypt_email
       dns_api_token    = var.k8s_letsencrypt_dns_provider_api_token
       dns_names        = var.k8s_apps_cert_domains
     })
@@ -527,6 +872,18 @@ resource "null_resource" "rke2_gateway_api_certificates_setup" {
     inline = [
       "set -e",
       "sudo mkdir -p /var/lib/rancher/rke2/server/manifests",
+
+      "export KUBECONFIG=/tmp/k8s_local.yaml",
+      "echo '📦 Creating gateway-system namespace...'",
+      "kubectl create namespace gateway-system --dry-run=client -o yaml | kubectl apply -f -",
+      "RETRIES=0",
+      "until kubectl get namespace gateway-system &>/dev/null || [ $RETRIES -eq 10 ]; do",
+      "  echo \"   -> Waiting for namespace gateway-system to be ready...\"",
+      "  sleep 3",
+      "  RETRIES=$((RETRIES+1))",
+      "done",
+      "if [ $RETRIES -eq 10 ]; then echo \"❌ ERROR: Namespace gateway-system not ready!\"; exit 1; fi",
+      "echo \"✅ Namespace gateway-system is ready.\"",
 
       # --- STRATEGY: PROVIDED ---
       "if [ '${var.k8s_cert_strategy}' = 'provided' ]; then",
@@ -578,7 +935,7 @@ resource "null_resource" "rke2_gateway_api_setup" {
     content = templatefile("${path.module}/templates/common/03-cilium-gateway-setup.yaml.tftpl", {
       lb_ip_range    = var.k8s_gateway_api_lb_ip_range
       network_device = var.k8s_api_cp_interface
-      secret_name = local.rke2_tls_secret_name
+      secret_name    = local.rke2_tls_secret_name
     })
     destination = "/tmp/03-cilium-gateway-setup.yaml"
   }
@@ -586,195 +943,47 @@ resource "null_resource" "rke2_gateway_api_setup" {
   provisioner "remote-exec" {
     inline = [
       "set -e",
-      "echo '🌐 Deploying Gateway API standard CRDs to auto-deploy directory...'",
+      "echo '🌐 Deploying Gateway API CRDs to auto-deploy directory...'",
       "sudo mkdir -p /var/lib/rancher/rke2/server/manifests",
+      "export KUBECONFIG=/tmp/k8s_local.yaml",
       # Download the standard install manifest for Gateway API
-      "sudo curl -sL https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml -o /var/lib/rancher/rke2/server/manifests/gateway-api-crds.yaml",
+      #"sudo curl -sL https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml -o /var/lib/rancher/rke2/server/manifests/gateway-api-crds.yaml",
+      # Cilium 1.19.5 needs the experimental CRDS. If not, it doesn't start up
+      # Cilium 1.19.5 needs the 1.6.0 experimental-install CRDS. If not, it doesn't start up
+      "sudo curl -sL https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.0/experimental-install.yaml -o /var/lib/rancher/rke2/server/manifests/gateway-api-crds.yaml",
+
+      # We wait for those CRDs, that are critical to Gateway API before continue
+      "echo '⏳ Waiting for Gateway API CRDs to be registered by RKE2...'",
+      "for crd in gatewayclasses.gateway.networking.k8s.io gateways.gateway.networking.k8s.io httproutes.gateway.networking.k8s.io tlsroutes.gateway.networking.k8s.io; do",
+      "  echo \"Checking $crd...\"",
+      "  until kubectl get crd $crd >/dev/null 2>&1; do sleep 5; done",
+      "  kubectl wait --for=condition=Established crd/$crd --timeout=300s",
+      "done",
+      "echo '✅ Gateway API CRDs successfully registered and ready!'",
+      "sleep 10",
+
       # Move the rendered gateway setup template to the manifest directory
       "sudo mv /tmp/03-cilium-gateway-setup.yaml /var/lib/rancher/rke2/server/manifests/03-cilium-gateway-setup.yaml",
-      "echo '✅ CRDs and Gateway configuration deployed. RKE2 will apply them automatically.'",
+      "echo '✅ Gateway API configuration deployed. RKE2 will apply them automatically.'",
       "sleep 10",
-      
-      "export KUBECONFIG=/tmp/k8s_local.yaml",
-      "echo '⏳ Waiting for Kubernetes API and Gateway API CRDs to be registered by RKE2...'",
-      "until kubectl get gatewayclasses.gateway.networking.k8s.io &>/dev/null; do",
-      "  sleep 5",
-      "done",
-      "echo '🚀 CRDs detected! Restarting Cilium Operator to accept the GatewayClass...'",
-      "kubectl rollout restart deployment -n kube-system cilium-operator",
+
+      "echo '🚀 Restarting Cilium Operator to accept the Gateway API CRDs...'",
+      "kubectl rollout restart deployment -n cilium-system cilium-operator",
 
       "echo '⏳ Waiting for Cilium Operator be Ready...'",
-      "kubectl rollout status deployment/cilium-operator -n kube-system --timeout=300s",
-      "echo '✅ Gateway API y Cilium Operador Running & Ready.'",
+      "kubectl rollout status deployment/cilium-operator -n cilium-system --timeout=300s",
+      "echo '✅ Gateway API and Cilium Operador Running & Ready.'",
       "sleep 20"
     ]
   }
 }
 
-###############################################################################
-# STEP 4: DEPLOY CEPH CSI FOR RKE2
-###############################################################################
-resource "null_resource" "rke2_ceph_csi_setup" {
-  # Trigger only after the bootstrap server's control plane is fully verified
-  for_each   = local.rke2_bootstrap_node_map
-  depends_on = [null_resource.rke2_gateway_api_setup]
-  
-  connection {
-    type        = "ssh"
-    user        = each.value.vm_user
-    host        = split("/", each.value.ip_address)[0]
-    private_key = file(var.ssh_private_key_path)
-  }
-
-  # Upload the template Ceph Secret and StorageClass
-  provisioner "file" {
-    content = templatefile("${path.module}/templates/common/07-ceph-csi-requisites.yaml.tftpl", {
-      clusterID = var.proxmox_ceph_clusterID
-      ceph_key  = var.proxmox_ceph_k8s_key
-    })
-    destination = "/tmp/07-ceph-csi-requisites.yaml"
-  }
-
-  # Upload the template Ceph Storage Ceph RDB CSI Helm
-  provisioner "file" {
-    content = templatefile("${path.module}/templates/rke2/08-ceph-rbd-csi-helm.yaml.tftpl", {
-      clusterID          = var.proxmox_ceph_clusterID
-      ceph_monitors_list = var.proxmox_nodes_ceph_IPs
-      replica_count      = length(var.kube_nodes) == 1 ? 1 : 3
-    })
-    destination = "/tmp/08-ceph-rbd-csi-helm.yaml"
-  }
-
-    # Upload the template Ceph Storage Ceph FS CSI Helm
-  provisioner "file" {
-    content = templatefile("${path.module}/templates/rke2/09-ceph-fs-csi-helm.yaml.tftpl", {
-      clusterID          = var.proxmox_ceph_clusterID
-      ceph_monitors_list = var.proxmox_nodes_ceph_IPs
-      replica_count      = length(var.kube_nodes) == 1 ? 1 : 3
-    })
-    destination = "/tmp/09-ceph-fs-csi-helm.yaml"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "set -e",
-      "echo '📦 Deploying CEPH CSI (RBD + CephFS) into RKE2 kubernetes cluster...'",
-      "echo '⚙️  Verifying RKE2 auto-deploy manifests directory...'",
-      "sudo mkdir -p /var/lib/rancher/rke2/server/manifests",
-      "KCONF='/etc/rancher/rke2/rke2.yaml'",
-
-      # External ConfigMap creation
-      "echo '📦 Creating external Ceph CSI ConfigMap...'",
-      "sudo kubectl --kubeconfig $KCONF apply -f - <<EOF",
-      "apiVersion: v1",
-      "kind: ConfigMap",
-      "metadata:",
-      "  name: ceph-csi-config",
-      "  namespace: kube-system",
-      "data:",
-      "  config.json: '[{\"clusterID\": \"${var.proxmox_ceph_clusterID}\", \"monitors\": [${join(",", [for node in var.proxmox_nodes_ceph_IPs : "\"${node}:6789\""])}]}]'",
-      "EOF",
-
-      # ConfigMap existig check
-      "echo '⏳ Verifying ConfigMap propagation in API Server...'",
-      "until sudo kubectl --kubeconfig $KCONF get configmap/ceph-csi-config -n kube-system > /dev/null 2>&1; do",
-      "  echo '  - ConfigMap not yet visible, retrying...'",
-      "  sleep 2",
-      "done",
-      "echo '✅ ConfigMap ceph-csi-config verified in API.'",
-
-      "echo '📦 Deploying Ceph CSI Secrets and StorageClasses...'",
-      "sudo mv /tmp/07-ceph-csi-requisites.yaml /var/lib/rancher/rke2/server/manifests/07-ceph-csi-requisites.yaml",
-
-      # Wait until the real secrets exist before launching Helm
-      "echo '⏳ Waiting for Ceph CSI Secrets to be created by RKE2...'",
-      "until sudo kubectl --kubeconfig $KCONF get secret csi-ceph-rbd-secret -n kube-system > /dev/null 2>&1; do",
-      "  echo '  - RBD Secret not created yet, waiting...'",
-      "  sleep 3",
-      "done",
-      "until sudo kubectl --kubeconfig $KCONF get secret csi-cephfs-secret -n kube-system > /dev/null 2>&1; do",
-      "  echo '  - CephFS Secret not created yet, waiting...'",
-      "  sleep 3",
-      "done",
-      "echo '✅ Ceph CSI Secrets verified in API Server. Proceeding with RBD Helm chart...'",
-      
-      # Create the HelmChart with integrated dynamic cluster configuration
-      "echo '📦 Deploying Ceph-RBD CSI HelmChart manifest...'",
-      "sudo mv /tmp/08-ceph-rbd-csi-helm.yaml /var/lib/rancher/rke2/server/manifests/08-ceph-rbd-csi-helm.yaml",
-      "echo '✅ Ceph-RBD CSI manifests successfully deployed to RKE2 manifests directory.'",
-      "echo \"⏳ Waiting for resources to exist in the API...\"",
-      "until sudo kubectl --kubeconfig $KCONF get daemonset/ceph-csi-rbd-nodeplugin -n kube-system > /dev/null 2>&1; do",
-        "echo \"  - daemonset ceph-csi-rbd-nodeplugin not created yet, waiting...\"",
-        "sleep 5",
-      "done",
-      "echo \"✅ daemonset ceph-csi-ceph-rbd-nodeplugin found...\"",
-      "until sudo kubectl --kubeconfig $KCONF get deployment/ceph-csi-rbd-provisioner -n kube-system > /dev/null 2>&1; do",
-        "echo \"  - deployment ceph-csi-rbd-provisioner not created yet, waiting...\"",
-        "sleep 5",
-      "done",
-      "echo \"✅ deployment ceph-csi-rbd-provisioner found...\"",
-      "echo '⏳ Validating ceph-csi-rbd-nodeplugin daemonset and ceph-csi-rbd-provisioner deployment...'",
-      "sleep 10",
-      "sudo kubectl --kubeconfig $KCONF rollout status daemonset/ceph-csi-rbd-nodeplugin  -n kube-system --timeout=720s",
-      "sudo kubectl --kubeconfig $KCONF rollout status deployment/ceph-csi-rbd-provisioner -n kube-system --timeout=720s",
-      "echo '✅ Ceph-RBD CSI is Running & Ready.'",
-      "sleep 10",
-      
-      "echo '📦 Deploying Ceph-FS CSI HelmChart manifest...'",
-      "sudo mv /tmp/09-ceph-fs-csi-helm.yaml /var/lib/rancher/rke2/server/manifests/09-ceph-fs-csi-helm.yaml",
-      "until sudo kubectl --kubeconfig $KCONF get daemonset/ceph-csi-cephfs-nodeplugin -n kube-system > /dev/null 2>&1; do",
-        "echo \"  - daemonset ceph-csi-cephfs-nodeplugin not created yet, waiting...\"",
-        "sleep 5",
-      "done",
-      "echo \"✅ daemonset ceph-csi-cephfs-nodeplugin found...\"",
-      "until sudo kubectl --kubeconfig $KCONF get deployment/ceph-csi-cephfs-provisioner -n kube-system > /dev/null 2>&1; do",
-        "echo \"  - deployment ceph-csi-cephfs-provisioner not created yet, waiting...\"",
-        "sleep 5",
-      "done",
-      "echo \"✅ deployment ceph-csi-cephfs-provisioner found...\"",
-      "echo '⏳ Validating ceph-csi-cephfs-nodeplugin daemonset and ceph-csi-cephfs-provisioner deployment...'",
-      "sleep 10",
-      "sudo kubectl --kubeconfig $KCONF rollout status daemonset/ceph-csi-cephfs-nodeplugin  -n kube-system --timeout=720s",
-      "sudo kubectl --kubeconfig $KCONF rollout status deployment/ceph-csi-cephfs-provisioner -n kube-system --timeout=720s",
-      "echo '✅ Ceph-FS CSI is Running & Ready.'",
-      "sleep 10"
-    ]
-  }
-}
-
-###############################################################################
-# MAINTENANCE: SAFE REBOOT (Maintains your original logic for all nodes)
-###############################################################################
-resource "ssh_resource" "k8s_config_rke2" {
-  for_each   = local.rke2_bootstrap_node_map
-  depends_on = [
-    null_resource.rke2_bootstrap
-  ]
-
-  user        = each.value.vm_user
-  host        = split("/", each.value.ip_address)[0]
-  private_key = file(var.ssh_private_key_path)
-
-  commands = [
-    "cat /tmp/k8s_external.yaml"
-  ]
-}
-
-resource "local_file" "save_kubeconfig_rke2" {
-  for_each = local.rke2_bootstrap_node_map
-
-  content  = ssh_resource.k8s_config_rke2[each.key].result
-  filename = "${path.root}/build/${split("-", var.deployment_flavor)[0]}/k8s_config.yaml"
-
-}
-
-resource "null_resource" "reboot_rke2_node_needed" {
+resource "null_resource" "rke2_reboot_node_needed" {
   for_each = local.rancher_linux_nodes_map
 
   # It is executed once the cluster is fully deployed and configured
   depends_on = [
-    local_file.save_kubeconfig_rke2, 
-    null_resource.rke2_join_worker
+    null_resource.rke2_gateway_api_setup
   ]
 
   provisioner "remote-exec" {
@@ -791,160 +1000,16 @@ resource "null_resource" "reboot_rke2_node_needed" {
       "if [ -f /var/run/reboot-required ]; then",
       "  echo '⚠️  WARNING: System restart IS required for Node ${each.key}'",
       "  echo 'To reboot safely, run:'",
-      "  echo 'kubectl drain ${each.key} --ignore-daemonsets --delete-emptydir-data'",
+      "  echo 'kubectl drain ${split("-", var.deployment_flavor)[0]}-${each.key} --ignore-daemonsets --delete-emptydir-data'",
       "  echo 'And then: sudo reboot'",
       "  echo 'After reboot, run:'",
-      "  echo 'kubectl uncordon ${each.key}'",
+      "  echo 'kubectl uncordon ${split("-", var.deployment_flavor)[0]}-${each.key}'",
+      "  echo '⚠️  OF COURSE, DO NOT REBOOT ANY NODE UNTIL ALL NODES ARE JOINED AND READY!'",
       "  sleep 10",
       "else",
       "  echo '✅ No reboot required for this node. Skipping.';",
       "fi",
       "echo '------------------------------------------------------------'",
-      "sleep 20"
-    ]
-  }
-}
-
-resource "null_resource" "verify_rke2_service_status" {
-  for_each   = local.rancher_linux_nodes_map
-  depends_on = [null_resource.reboot_rke2_node_needed]
-
-  connection {
-    type        = "ssh"
-    user        = each.value.vm_user
-    host        = split("/", each.value.ip_address)[0]
-    private_key = file(var.ssh_private_key_path)
-    timeout     = "12m"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "set -e",
-      "SERVICE_NAME='${each.value.type == "rke2-agent" ? "rke2-agent" : "rke2-server"}'",
-
-      "echo \"⏳ Waiting for $SERVICE_NAME to start...\"",
-      "TIMEOUT=300",
-      "ELAPSED=0",
-      "until sudo systemctl is-active --quiet \"$SERVICE_NAME\"; do",
-      "  if [ \"$ELAPSED\" -ge \"$TIMEOUT\" ]; then",
-      "    echo \"❌ ERROR: Kubernetes service ($SERVICE_NAME) failed to start within $TIMEOUT seconds.\"",
-      "    exit 1",
-      "  fi",
-      "  echo \"🔄 Service '$SERVICE_NAME' is still initializing... ($ELAPSED/$TIMEOUT s)\"",
-      "  sleep 10",
-      "  ELAPSED=$((ELAPSED + 10))",
-      "done",
-      "echo \"✅ Systemd service ($SERVICE_NAME) is ACTIVE!\"",
-      "sleep 10"
-    ]
-  }
-}
-
-resource "null_resource" "verify_rke2_cluster_health" {
-  for_each   = local.rke2_bootstrap_node_map
-  depends_on = [null_resource.verify_rke2_service_status]
-
-  connection {
-    type        = "ssh"
-    user        = each.value.vm_user
-    host        = split("/", each.value.ip_address)[0]
-    private_key = file(var.ssh_private_key_path)
-    timeout     = "12m"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "set -e",
-      "KCONF='/etc/rancher/rke2/rke2.yaml'",
-
-      "echo '⏳ Waiting for API Server...'",
-      "until sudo kubectl --kubeconfig $KCONF get nodes >/dev/null 2>&1; do sleep 5; done",
-      "echo '✅ API Server is responding!'",
-      
-      "echo '⏳ Waiting for ALL cluster nodes to report Ready...'",
-      "NODE_TIMEOUT=300",
-      "NODE_ELAPSED=0",
-      "until [ \"$(sudo kubectl --kubeconfig $KCONF get nodes -o jsonpath='{.items[*].status.conditions[?(@.type==\"Ready\")].status}' | grep -o 'True' | wc -l)\" -eq \"${local.rke2_number_of_nodes}\" ]; do",
-      "  if [ \"$NODE_ELAPSED\" -ge \"$NODE_TIMEOUT\" ]; then echo '❌ Error: Timeout waiting for nodes.'; exit 1; fi",
-      "  echo '🔄 Waiting for all nodes to be Ready...'",
-      "  sleep 10",
-      "  NODE_ELAPSED=$((NODE_ELAPSED + 10))",
-      "done",
-      "echo '✅ All nodes are Ready!'",
-      "sleep 10",
-
-      "echo '⏳ Checking for Pod stability in kube-system...'",
-      "CORE_TIMEOUT=600",
-      "CORE_ELAPSED=0",
-      "until [ \"$CORE_ELAPSED\" -ge \"$CORE_TIMEOUT\" ]; do",
-      "  BAD_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n kube-system --no-headers 2>/dev/null | grep -v 'helm-install' | grep -vE 'Running|Completed' | wc -l || echo 0)",
-      "  NOT_READY_PODS=$(sudo kubectl --kubeconfig $KCONF get pods -n kube-system --field-selector=status.phase=Running --no-headers 2>/dev/null | grep -v 'helm-install' | awk '$2 ~ /0\\// {print $0}' | wc -l || echo 0)",
-      
-      "  if [ \"$BAD_PODS\" -eq 0 ] && [ \"$NOT_READY_PODS\" -eq 0 ]; then",
-      "    echo '✅ All core pods are Running/Completed and Ready!'",
-      "    sleep 10",
-      "    break",
-      "  fi",
-      "  echo \"🔄 Waiting... (Bad: $BAD_PODS, Not-Ready: $NOT_READY_PODS). ($CORE_ELAPSED/$CORE_TIMEOUT s)\"",
-      "  sleep 15",
-      "  CORE_ELAPSED=$((CORE_ELAPSED + 15))",
-      "done",
-      "if [ \"$CORE_ELAPSED\" -ge \"$CORE_TIMEOUT\" ]; then",
-      "  echo '⚠️   WARNING: Core pods are taking longer than expected to report Ready.'",
-      "  sleep 10",
-      "fi"
-    ]
-  }
-}
-
-resource "null_resource" "rke2_deploy_kube_vip_pod" {
-  for_each   = local.rke2_cp_node_map
-  depends_on = [null_resource.verify_rke2_cluster_health]
-
-  connection {
-    type        = "ssh"
-    user        = each.value.vm_user
-    host        = split("/", each.value.ip_address)[0]
-    private_key = file(var.ssh_private_key_path)
-    timeout     = "10m"
-  }
-
-  # Upload kube-vip config
-  provisioner "file" {
-    content = templatefile("${path.module}/templates/rke2/00-kube-vip.yaml.tftpl", {
-      vip_address   = var.k8s_api_endpoint_vip
-      vip_interface = var.k8s_api_cp_interface
-    })
-    destination = "/tmp/00-kube-vip.yaml"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "set -e",
-      "if [ ! -z \"${var.k8s_api_endpoint_vip}\" ]; then",
-      "  KCONF=/etc/rancher/rke2/rke2.yaml",
-      # If there is an explicit VIP in the variables, we activate the Kube-VIP balancer.
-      "  echo '📦 Pre-loading Kube-VIP Manifest for Control Plane HA...'",
-      "  sudo curl -sL https://kube-vip.io/manifests/rbac.yaml -o /var/lib/rancher/rke2/server/manifests/00-kube-vip-rbac.yaml",
-      "  sleep 5",
-      # 🚀 BULLETPROOF HA SOLUTION: Writing the exact, tested Kube-VIP Control Plane manifest
-      "  echo '📦 Configuring Kube-VIP Pod Manifest for Control Plane HA...'",
-      "  sudo mv /tmp/00-kube-vip.yaml /var/lib/rancher/rke2/server/manifests/00-kube-vip.yaml",
-      "  echo \"⏳ Waiting for resources to exist in the API...\"",
-      "  until sudo kubectl --kubeconfig $KCONF get ClusterRoleBinding system:kube-vip-binding -n kube-system > /dev/null 2>&1; do",
-      "    echo \"  - ClusterRoleBinding system:kube-vip-binding not created yet, waiting...\"",
-      "    sleep 5",
-      " done",
-      " echo \"✅ ClusterRoleBinding system:kube-vip-binding found...\"",
-      # 🚀 Wait Pod be Running & Ready
-      "  echo '⏳ Waiting for kube-vip pod to be Running and Ready...'",
-
-      "  until [ \"$(sudo kubectl --kubeconfig $KCONF get pod kube-vip -n kube-system -o jsonpath='{.status.containerStatuses[0].ready}')\" = \"true\" ]; do",
-      "    echo '🔄 Kube-VIP pod is initializing...'",
-      "    sleep 5",
-      "  done",
-      "  echo '✅ Kube-VIP is Ready!'",
-      "fi",
       "sleep 10"
     ]
   }
