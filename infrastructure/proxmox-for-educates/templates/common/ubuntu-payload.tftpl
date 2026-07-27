@@ -11,6 +11,10 @@ ntp:
     - time.google.com
 
 write_files:
+  - path: /usr/local/share/ca-certificates/root-ca.crt
+    permissions: "0644"
+    content: |
+      ${indent(6, root_ca)}
   - path: /etc/sysctl.d/99-rke2-optimization.conf
     content: |
       net.core.rmem_max = 16777216
@@ -26,6 +30,9 @@ runcmd:
     exec > /var/log/proxmox-prep.log 2>&1
     set -x
     export DEBIAN_FRONTEND=noninteractive
+
+    echo "Adding Company CA"
+    update-ca-certificates
 
     echo "Waiting for apt lock..."
     while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do

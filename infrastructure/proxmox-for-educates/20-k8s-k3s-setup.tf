@@ -138,7 +138,9 @@ resource "null_resource" "k3s_certificates_setup" {
 
   # LetsEncrypt Strategy
   provisioner "file" {
-    content     = templatefile("${path.module}/templates/common/05-cert-manager-chart.yaml.tftpl", {})
+    content     = templatefile("${path.module}/templates/common/05-cert-manager-chart.yaml.tftpl", {
+      cert_manager_version = var.k8s_cert_manager_version
+    })
     destination = "/tmp/05-cert-manager-chart.yaml"
   }
   provisioner "file" {
@@ -245,10 +247,10 @@ resource "null_resource" "reboot_k3s_node_needed" {
       "if [ -f /var/run/reboot-required ]; then",
       "  echo '⚠️  WARNING: System restart IS required for Node ${each.key}'",
       "  echo 'To reboot safely, run:'",
-      "  echo 'kubectl drain ${each.key} --ignore-daemonsets --delete-emptydir-data'",
+      "  echo 'kubectl drain ${split("-", var.deployment_flavor)[0]}-${each.key} --ignore-daemonsets --delete-emptydir-data'",
       "  echo 'And then: sudo reboot'",
       "  echo 'After reboot, run:'",
-      "  echo 'kubectl uncordon ${each.key}'",
+      "  echo 'kubectl uncordon ${split("-", var.deployment_flavor)[0]}-${each.key}'",
       "  sleep 10",
       "else",
       "  echo '✅ No reboot required for this node. Skipping.';",

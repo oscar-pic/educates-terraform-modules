@@ -7,6 +7,20 @@ variable "deployment_flavor" {
   }
 }
 
+variable "environment" {
+  description = "Deployment environment"
+  type        = string
+
+  validation {
+    condition = contains(
+      ["lab", "dev", "prod"],
+      var.environment
+    )
+
+    error_message = "environment must be one of: lab, dev, prod."
+  }
+}
+
 variable "proxmox_nodes" {
   type    = list(string)
   default = ["proxmox-server"]
@@ -88,9 +102,15 @@ variable "k8s_gateway_api_lb_ip_range" {
 }
 
 variable "ssh_private_key_path" {
-  description = "Path to the SSH private key to connect to Proxmox"
+  description = "Path to the SSH private key to connect to Proxmox and VMs from Automation scripts"
   type        = string
-  default     = "~/.ssh/id_ed25519"
+  default     = ""
+}
+
+variable "ssh_public_key_path" {
+  description = "Path to the SSH public key injected into VMs for passwordless access from Management nodes"
+  type        = string
+  default     = ""
 }
 
 variable "proxmox_images_snippets_datastore" {
@@ -129,6 +149,16 @@ variable "proxmox_image_filename" {
   default     = "ubuntu-24-cloud.img"
 }
 
+variable "k8s_cluster_name" {
+  description = "Unique cluster name within the environment"
+  type        = string
+
+  validation {
+    condition = can(regex("^[a-z0-9-]+$", var.k8s_cluster_name))
+    error_message = "k8s_cluster_name must contain only lowercase letters, numbers and hyphens."
+  }
+}
+
 variable "k8s_api_endpoint_vip" {
   description = "Optional VIP/LB IP. If empty, the code picks a control-plane node."
   type        = string
@@ -143,7 +173,7 @@ variable "k8s_api_cp_interface" {
 
 variable "k8s_cluster_token" {
   type        = string
-  description = "Secrec Shared Token to nodes join to RKE2 Cluster"
+  description = "Secret Shared Token to nodes join to RKE2 Cluster"
   default     = "secret-educates-token-123456"
   sensitive   = true
 }
@@ -165,16 +195,10 @@ variable "system_timezone" {
   default     = "Europe/Madrid"
 }
 
-variable "talos_cluster_name" {
-  type        = string
-  description = "Talos Cluster Name"
-  default     = "talos-proxmox-cluster"
-}
-
 variable "talos_compiled_version" {
   type        = string
   description = "Talos Linux version to compile in the factory"
-  default     = "v1.13.4"
+  default     = "v1.13.5"
 }
 
 variable "talos_compiled_extensions" {
@@ -185,6 +209,24 @@ variable "talos_compiled_extensions" {
     "siderolabs/util-linux-tools",
     "siderolabs/intel-ucode"
   ]
+}
+
+variable "k8s_cilium_version" {
+  type        = string
+  description = "Cilium Version"
+  default     = "1.19.5"
+}
+
+variable "k8s_cert_manager_version" {
+  type        = string
+  description = "Cert-Manager Version"
+  default     = "1.20.3"
+}
+
+variable "k8s_ceph_version" {
+  type        = string
+  description = "Ceph Version"
+  default     = "3.17.0"
 }
 
 variable "kube_nodes" {
@@ -199,13 +241,12 @@ variable "kube_nodes" {
     mac_address         = optional (string, "")
     ip_address          = string
     gateway             = string
-    dns_servers         = optional(list(string), ["8.8.8.8, 1.1.1.1"]) # Default if not specified
+    dns_servers         = optional(list(string), ["8.8.8.8", "1.1.1.1"]) # Default if not specified
     network_bridge      = optional(string, "vmbr0")
     ceph_ip_address     = string
     ceph_network_bridge = optional(string, "vmbr1")
     vm_user             = optional(string, "ubuntu")
     vm_password         = optional(string, "Ubuntu1!")
-    ssh_key_path        = optional(string, "~/.ssh/id_ed25519.pub")
     vm_cores            = optional(number, 4)
     vm_memory           = optional(number, 8192)
     vm_disk_size        = optional(number, 30)

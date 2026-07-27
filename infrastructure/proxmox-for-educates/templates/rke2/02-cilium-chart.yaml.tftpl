@@ -7,7 +7,7 @@ spec:
   chart: cilium
   repo: https://helm.cilium.io/
   targetNamespace: cilium-system
-  version: 1.19.5
+  version: ${cilium_version}
   bootstrap: true
   valuesContent: |-
     kubeProxyReplacement: true

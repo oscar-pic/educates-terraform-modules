@@ -1,3 +1,13 @@
+output "environment" {
+  description = "Deployment environment"
+  value       = var.environment
+}
+
+output "cluster_name" {
+  description = "Kubernetes cluster name"
+  value       = var.k8s_cluster_name
+}
+
 ###############################################################################
 # INFRASTRUCTURE DEPLOYMENT SUMMARY
 ###############################################################################

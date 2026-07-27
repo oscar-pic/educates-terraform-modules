@@ -111,7 +111,7 @@ resource "talos_machine_secrets" "talos_cluster_secrets" {
 
 data "talos_machine_configuration" "talos_config" {
   for_each         = local.is_talos_deployment ? var.kube_nodes : {}
-  cluster_name     = var.talos_cluster_name
+  cluster_name     = var.k8s_cluster_name
   cluster_endpoint = "https://${var.k8s_api_endpoint_vip}:6443"
   machine_type     = strcontains(each.value.type, "controlplane") ? "controlplane" : "worker"
   machine_secrets  = talos_machine_secrets.talos_cluster_secrets[0].machine_secrets
@@ -176,14 +176,17 @@ data "talos_machine_configuration" "talos_config" {
 data "talos_client_configuration" "talos_config_data" {
   count = local.is_talos_deployment ? 1 : 0
 
-  cluster_name         = var.talos_cluster_name
+  cluster_name         = var.k8s_cluster_name
   client_configuration = talos_machine_secrets.talos_cluster_secrets[0].client_configuration
   endpoints            = [for k, v in local.talos_cp_nodes : split("/", v.ip_address)[0]]
 }
 
 resource "null_resource" "wait_for_talos" {
   count      = length(local.talos_bootstrap_node) > 0 ? 1 : 0
-  depends_on = [proxmox_virtual_environment_vm.kube_node]
+  depends_on = [
+    proxmox_virtual_environment_vm.kube_node,
+    local_file.talosconfig
+  ]
 
   provisioner "local-exec" {
     interpreter = local.interpreter
@@ -303,7 +306,7 @@ resource "helm_release" "talos_cilium_setup" {
   chart            = "cilium"
   namespace        = "cilium-system"
   create_namespace = false
-  version          = "1.19.5"
+  version          = var.k8s_cilium_version
 
   values = [
     templatefile("${path.module}/templates/talos/cilium-helm-values.yaml.tftpl", {
@@ -381,7 +384,7 @@ resource "helm_release" "talos_cert_manager" {
   chart            = "cert-manager"
   namespace        = "cert-manager"
   create_namespace = true
-  version          = "v1.20.3"
+  version          = var.k8s_cert_manager_version
 
   set = [{
     name  = "crds.enabled"
@@ -484,7 +487,7 @@ resource "null_resource" "talos_cilium_gateway_setup" {
       echo '🌐 Deploying Gateway API CRDs...'
       # Download the standard install manifest for Gateway API
       #kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
-      # Cilium 1.19.5 needs the 1.6.0 experimental-install CRDS. If not, it doesn't start up
+      # Cilium needs from 1.19.5 the 1.6.0 experimental-install CRDS. If not, it doesn't start up
       kubectl --kubeconfig ./build/talos/k8s_config.yaml apply --server-side=true --force-conflicts -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.0/experimental-install.yaml
 
       # We wait for those CRDs, that are critical to Gateway API before continue
@@ -523,8 +526,8 @@ resource "null_resource" "talos_ceph_csi_requisites" {
       echo '📦 Deploying CEPH CSI (RBD + CephFS) into Talos kubernetes cluster...'
 
       # Pre-load images to all nodes before deployment
-      echo '🚀 Pre-loading Ceph CSI (v3.17.0) images on Talos worker nodes...'
-      talosctl --talosconfig ./build/talos/talosconfig image pull quay.io/cephcsi/cephcsi:v3.17.0 --nodes ${local.talos_workers_nodes_ips} --namespace cri
+      echo "🚀 Pre-loading Ceph CSI (${var.k8s_ceph_version}) images on Talos worker nodes..."
+      talosctl --talosconfig ./build/talos/talosconfig image pull quay.io/cephcsi/cephcsi:v${var.k8s_ceph_version} --nodes ${local.talos_workers_nodes_ips} --namespace cri
       echo '✅ Images pre-loaded.'
       sleep 5
 
@@ -597,7 +600,7 @@ resource "helm_release" "talos_ceph_csi_rbd" {
   name             = "ceph-csi-rbd"
   repository       = "https://ceph.github.io/csi-charts"
   chart            = "ceph-csi-rbd"
-  version          = "3.17.0"
+  version          = var.k8s_ceph_version
   namespace        = "ceph-system"
   create_namespace = true
 
@@ -623,7 +626,7 @@ resource "helm_release" "talos_ceph_csi_cephfs" {
   name             = "ceph-csi-cephfs"
   repository       = "https://ceph.github.io/csi-charts"
   chart            = "ceph-csi-cephfs"
-  version          = "3.17.0"
+  version          = var.k8s_ceph_version
   namespace        = "ceph-system"
   create_namespace = true
 

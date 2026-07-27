@@ -221,6 +221,7 @@ resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
       node_ip             = each.value.ip_address
       deployment_flavor   = var.deployment_flavor
       timezone            = var.system_timezone
+      root_ca             = file("${path.module}/certs/mkcert-rootCA.pem")
       ceph_interface      = var.k8s_ceph_node_interface
       ceph_network        = var.k8s_ceph_network_cidr
     })

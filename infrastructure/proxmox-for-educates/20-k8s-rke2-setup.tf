@@ -92,6 +92,7 @@ resource "null_resource" "rke2_bootstrap" {
       # If it's a single node, use 1 replica; otherwise, 3 for HA.
       operator_replicas = length(var.kube_nodes) == 1 ? 1 : 3
       network_device    = var.k8s_api_cp_interface
+      cilium_version    = var.k8s_cilium_version
     })
     destination = "/tmp/02-cilium-chart.yaml"
   }
@@ -298,6 +299,7 @@ resource "null_resource" "rke2_ceph_csi_setup" {
   provisioner "file" {
     content = templatefile("${path.module}/templates/rke2/08-ceph-rbd-csi-helm.yaml.tftpl", {
       replica_count = length(var.kube_nodes) == 1 ? 1 : 3
+      ceph_version  = var.k8s_ceph_version
     })
     destination = "/tmp/08-ceph-rbd-csi-helm.yaml"
   }
@@ -306,6 +308,7 @@ resource "null_resource" "rke2_ceph_csi_setup" {
   provisioner "file" {
     content = templatefile("${path.module}/templates/rke2/09-ceph-fs-csi-helm.yaml.tftpl", {
       replica_count = length(var.kube_nodes) == 1 ? 1 : 3
+      ceph_version  = var.k8s_ceph_version
     })
     destination = "/tmp/09-ceph-fs-csi-helm.yaml"
   }
@@ -854,7 +857,9 @@ resource "null_resource" "rke2_gateway_api_certificates_setup" {
 
   # LetsEncrypt Strategy
   provisioner "file" {
-    content     = templatefile("${path.module}/templates/common/05-cert-manager-chart.yaml.tftpl", {})
+    content     = templatefile("${path.module}/templates/common/05-cert-manager-chart.yaml.tftpl", {
+      cert_manager_version = var.k8s_cert_manager_version
+    })
     destination = "/tmp/05-cert-manager-chart.yaml"
   }
   provisioner "file" {
@@ -948,8 +953,7 @@ resource "null_resource" "rke2_gateway_api_setup" {
       "export KUBECONFIG=/tmp/k8s_local.yaml",
       # Download the standard install manifest for Gateway API
       #"sudo curl -sL https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml -o /var/lib/rancher/rke2/server/manifests/gateway-api-crds.yaml",
-      # Cilium 1.19.5 needs the experimental CRDS. If not, it doesn't start up
-      # Cilium 1.19.5 needs the 1.6.0 experimental-install CRDS. If not, it doesn't start up
+      # Cilium needs from 1.19.5 the 1.6.0 experimental-install CRDS. If not, it doesn't start up
       "sudo curl -sL https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.0/experimental-install.yaml -o /var/lib/rancher/rke2/server/manifests/gateway-api-crds.yaml",
 
       # We wait for those CRDs, that are critical to Gateway API before continue

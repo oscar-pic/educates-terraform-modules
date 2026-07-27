@@ -170,7 +170,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
       user_account {
         username = each.value.vm_user
         password = each.value.vm_password
-        keys     = [trimspace(file(pathexpand(each.value.ssh_key_path)))]
+        keys     = [trimspace(file(pathexpand(var.ssh_public_key_path)))]
       }
     }
   }
