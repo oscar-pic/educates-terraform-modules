@@ -1,5 +1,3 @@
-
-
 module "proxmox_for_educates" {
   source = "../../infrastructure/proxmox-for-educates"
 
