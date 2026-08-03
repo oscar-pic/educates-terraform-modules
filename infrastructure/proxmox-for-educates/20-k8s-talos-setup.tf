@@ -241,7 +241,7 @@ resource "local_file" "kubeconfig" {
 
 resource "null_resource" "talos_wait_for_cluster_readiness" {
   count      = local.is_talos_deployment ? 1 : 0
-  depends_on = [talos_machine_bootstrap.cluster_bootstrap]
+  depends_on = [local_file.kubeconfig]
 
   provisioner "local-exec" {
     interpreter = local.interpreter
@@ -294,7 +294,6 @@ resource "terraform_data" "cilium_namespace_setup" {
   }
 
   depends_on = [
-    talos_cluster_kubeconfig.kubeconfig_auth,
     null_resource.talos_wait_for_cluster_readiness
   ]
 }
@@ -558,8 +557,7 @@ resource "null_resource" "talos_ceph_csi_shared_config" {
   count      = local.is_talos_deployment ? 1 : 0
   
   depends_on = [
-    null_resource.talos_ceph_csi_requisites,
-    local_file.kubeconfig
+    null_resource.talos_ceph_csi_requisites
   ]
 
   triggers = {
