@@ -9,10 +9,13 @@ BUILD_ROOT      := build
 ENVIRONMENT     := $(shell grep '^environment' vars/$(FLAVOR).tfvars | cut -d'"' -f2)
 CLUSTER_NAME    := $(shell grep '^k8s_cluster_name' vars/$(FLAVOR).tfvars | cut -d'"' -f2)
 
+# Optional parallelism parameter (defaults to empty so Terraform uses its internal default, or you can override like PARALLELISM=1)
+PARALLELISM     ?= 
+
 # 2. Flavor Validation
 ifeq ($(filter help,$(MAKECMDGOALS)),)
   ifndef FLAVOR
-    $(error ERROR: FLAVOR is not defined. Use 'make [plan|apply|destroy] FLAVOR=k3s|rke2|talos')
+    $(error ERROR: FLAVOR is not defined. Use 'make [plan|apply|destroy] FLAVOR=k3s|rke2|talos [PARALLELISM=1]')
   endif
   ifneq ($(filter $(FLAVOR),$(ALLOWED_FLAVORS)),$(FLAVOR))
     $(error ERROR: FLAVOR must be one of [$(ALLOWED_FLAVORS)].)
@@ -25,7 +28,7 @@ ARTIFACT_DIR := $(BUILD_ROOT)/$(FLAVOR)
 # Help command
 help:
 	@echo "Terraform Infrastructure Manager"
-	@echo "Usage: make [COMMAND] FLAVOR=[flavor]"
+	@echo "Usage: make [COMMAND] FLAVOR=[flavor] [PARALLELISM=n]"
 	@echo ""
 	@echo "Commands (Terraform wrappers):"
 	@echo "  plan     Initialize Terraform and generate execution plan"
@@ -34,8 +37,11 @@ help:
 	@echo ""
 	@echo "Flavors:"
 	@echo "  $(ALLOWED_FLAVORS)"
+	@echo ""
+	@echo "Parameters:"
+	@echo "  PARALLELISM  Limit concurrent operations (e.g., PARALLELISM=1)"
 	@echo "Example:"
-	@echo "  make plan FLAVOR=k3s"
+	@echo "  make apply FLAVOR=talos PARALLELISM=1"
 
 # Ensure build directory exists for artifacts
 $(ARTIFACT_DIR):
@@ -44,9 +50,7 @@ $(ARTIFACT_DIR):
 # Init: Sets up backend and ensures we are in the right Workspace with validation
 init: $(ARTIFACT_DIR)
 	@echo "--- Initializing workspace and backend for $(FLAVOR) ---"
-# 	@terraform init -backend-config=$(BACKENDS_DIR)/$(FLAVOR).hcl || \
-# 	(echo "--- Backend mismatch detected, attempting migration ---" && \
-# 	 terraform init -backend-config=$(BACKENDS_DIR)/$(FLAVOR).hcl -migrate-state -input=false)
+
 	@terraform init \
 		-backend-config=$(BACKENDS_DIR)/$(FLAVOR).hcl \
 		-backend-config="key=$(ENVIRONMENT)/$(CLUSTER_NAME)/terraform.tfstate" \
@@ -70,9 +74,10 @@ init: $(ARTIFACT_DIR)
 # Plan: Generates an artifact in the build directory
 plan: init
 	@echo "--- Generating plan for $(FLAVOR) ---"
-	#@terraform plan -var-file=$(VARS_DIR)/$(FLAVOR).tfvars -out=$(ARTIFACT_DIR)/$(FLAVOR).tfplan
+
 	@terraform plan \
 		-var-file=$(VARS_DIR)/$(FLAVOR).tfvars \
+		$(if $(PARALLELISM),-parallelism=$(PARALLELISM),) \
 		-out=$(ARTIFACT_DIR)/$(FLAVOR).tfplan \
 		-no-color \
 		> $(ARTIFACT_DIR)/$(FLAVOR)-tfplan.log
@@ -87,20 +92,23 @@ plan: init
 	@echo "=========================================================="
 	@echo "Plan generated successfully."
 	@echo "To apply this plan, run:"
-	@echo "  make apply FLAVOR=$(FLAVOR)"
+	@echo "  make apply FLAVOR=$(FLAVOR)$(if $(PARALLELISM), PARALLELISM=$(PARALLELISM),)"
 	@echo "=========================================================="
 
 # Apply: Uses the artifact from the build directory
 apply: init
 	@echo "--- Applying configuration for $(FLAVOR) ---"
-	@terraform apply "$(ARTIFACT_DIR)/$(FLAVOR).tfplan"
+	@terraform apply \
+		$(if $(PARALLELISM),-parallelism=$(PARALLELISM),) \
+		"$(ARTIFACT_DIR)/$(FLAVOR).tfplan"
 
 # Destroy: Validated destroy
 destroy: init
 	@echo "--- DESTROYING infrastructure for $(FLAVOR) ---"
-	#@terraform destroy -var-file=$(VARS_DIR)/$(FLAVOR).tfvars -auto-approve
+
 	@terraform destroy \
 		-var-file=$(VARS_DIR)/$(FLAVOR).tfvars \
+		$(if $(PARALLELISM),-parallelism=$(PARALLELISM),) \
 		-auto-approve \
 		-no-color \
 		> $(ARTIFACT_DIR)/$(FLAVOR)-tfdestroy.log 2>&1 || \
