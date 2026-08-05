@@ -24,6 +24,15 @@ locals {
     if v.type == "rke2-agent"
   ]
 
+  # Same list, keyed by node name (not by list position) so adding/renaming other nodes never
+  # shifts which VM an already-applied null_resource.rke2_join_worker instance targets. Each
+  # entry still carries its position (join_order) to stagger joins the same way count.index
+  # used to -- but that's only used inside the provisioner script, never in triggers/connection,
+  # so an existing node's join_order changing later has no effect on it.
+  rke2_join_worker_map = {
+    for idx, item in local.rke2_join_worker_list : item.name => merge(item, { join_order = idx })
+  }
+
   # Number of CP on RKE2 deployment
   rke2_cp_node_map = var.deployment_flavor == "rke2" ? {
     for k, v in local.rke2_all_nodes : k => v if v.type == "rke2-server" || v.type == "rke2-server-bootstrap"
@@ -681,20 +690,20 @@ resource "null_resource" "rke2_wait_cp_ready" {
 }
 
 resource "null_resource" "rke2_join_worker" {
-  #for_each = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-agent" }
-  count = length(local.rke2_join_worker_list)
+  for_each = local.rke2_join_worker_map
 
   # CRUCIAL: No node attempts to join until the CPs are operational
   depends_on = [null_resource.rke2_wait_cp_ready]
 
   triggers = {
-    vm_id = proxmox_virtual_environment_vm.kube_node[local.rke2_join_worker_list[count.index].name].id
+    # This ID will only change if the VM is destroyed and recreated
+    vm_id = proxmox_virtual_environment_vm.kube_node[each.key].id
   }
 
   connection {
     type        = "ssh"
-    user        = local.rke2_join_worker_list[count.index].vm_user
-    host        = split("/", local.rke2_join_worker_list[count.index].ip_address)[0]
+    user        = each.value.vm_user
+    host        = split("/", each.value.ip_address)[0]
     private_key = file(var.ssh_private_key_path)
   }
 
@@ -707,7 +716,7 @@ resource "null_resource" "rke2_join_worker" {
       is_bootstrap           = false
       is_server              = false
       cert_cp_ips            = [for k, v in var.kube_nodes : split("/", v.ip_address)[0] if contains(["rke2-server", "rke2-server-bootstrap"], v.type)]
-      extra_node_labels_list = local.rke2_join_worker_list[count.index].node_labels
+      extra_node_labels_list = each.value.node_labels
     })
     destination = "/tmp/rke2-config.yaml"
   }
@@ -728,10 +737,10 @@ resource "null_resource" "rke2_join_worker" {
       "echo '✅ Cloud-Init finished! OS is fully updated and unlocked.'",
 
       # -----------------------------------------------------------------
-      # ⌛ DYNAMIC SERIALIZATION BLOCK USING COUNT.INDEX
+      # ⌛ DYNAMIC SERIALIZATION BLOCK USING THE NODE'S JOIN ORDER
       # -----------------------------------------------------------------
       "echo '⌛ Syncronizing the Workers Provisioning...'",
-      "SLEEP_TIME=$(( ${count.index} * 210 ))",
+      "SLEEP_TIME=$(( ${each.value.join_order} * 210 ))",
       "if [ $SLEEP_TIME -gt 0 ]; then",
       "  echo \"⏳ Active wait queue: This node will wait $SLEEP_TIME seconds before starting RKE2...\"",
       "  sleep $SLEEP_TIME",
@@ -771,7 +780,7 @@ resource "null_resource" "rke2_join_worker" {
       "  sleep 10",
       "done",
 
-      "echo '✅ Node ${local.rke2_join_worker_list[count.index].name} joined successfully!'",
+      "echo '✅ Node ${each.key} joined successfully!'",
       "sleep 10"
     ]
   }
