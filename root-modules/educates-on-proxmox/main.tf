@@ -9,6 +9,11 @@ module "proxmox_for_educates" {
   proxmox_api_token                      = var.proxmox_api_token
   proxmox_ceph_clusterID                 = var.proxmox_ceph_clusterID
   proxmox_ceph_k8s_key                   = var.proxmox_ceph_k8s_key
+  k8s_storage_backend                    = var.k8s_storage_backend
+  nfs_csi_version                        = var.nfs_csi_version
+  nfs_csi_server_address                 = var.nfs_csi_server_address
+  nfs_csi_share_path                     = var.nfs_csi_share_path
+  nfs_csi_mount_options                  = var.nfs_csi_mount_options
   k8s_cert_strategy                      = var.k8s_cert_strategy
   k8s_certs_path                         = var.k8s_cert_strategy == "provided" ? abspath(var.k8s_certs_path) : ""
   k8s_apps_cert_domains                  = var.k8s_apps_cert_domains

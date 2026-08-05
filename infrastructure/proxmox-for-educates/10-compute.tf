@@ -1,9 +1,15 @@
+resource "proxmox_virtual_environment_pool" "cluster_pool" {
+  pool_id = var.k8s_cluster_name
+  comment = "Nodes for Kubernetes cluster '${var.k8s_cluster_name}' (${var.deployment_flavor})"
+}
+
 resource "proxmox_virtual_environment_vm" "kube_node" {
   # We use the flavor variable to control which nodes are created
-  for_each = var.kube_nodes 
+  for_each = var.kube_nodes
 
-  name      = "${split("-", var.deployment_flavor)[0]}-${each.key}"
+  name      = "${var.k8s_cluster_name}-${each.key}"
   node_name = var.proxmox_nodes[each.value.proxmox_host]
+  pool_id   = proxmox_virtual_environment_pool.cluster_pool.pool_id
 
   lifecycle {
     create_before_destroy = true

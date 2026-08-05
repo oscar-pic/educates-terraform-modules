@@ -221,7 +221,7 @@ resource "local_file" "save_kubeconfig_k3s" {
   for_each = local.k3s_bootstrap_node_map
 
   content  = ssh_resource.k8s_config_k3s[each.key].result
-  filename = "${path.root}/build/${split("-", var.deployment_flavor)[0]}/k8s_config.yaml"
+  filename = "${path.root}/build/${split("-", var.deployment_flavor)[0]}/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
 
 }
 
@@ -247,10 +247,10 @@ resource "null_resource" "reboot_k3s_node_needed" {
       "if [ -f /var/run/reboot-required ]; then",
       "  echo '⚠️  WARNING: System restart IS required for Node ${each.key}'",
       "  echo 'To reboot safely, run:'",
-      "  echo 'kubectl drain ${split("-", var.deployment_flavor)[0]}-${each.key} --ignore-daemonsets --delete-emptydir-data'",
+      "  echo 'kubectl drain ${each.key} --ignore-daemonsets --delete-emptydir-data'",
       "  echo 'And then: sudo reboot'",
       "  echo 'After reboot, run:'",
-      "  echo 'kubectl uncordon ${split("-", var.deployment_flavor)[0]}-${each.key}'",
+      "  echo 'kubectl uncordon ${each.key}'",
       "  sleep 10",
       "else",
       "  echo '✅ No reboot required for this node. Skipping.';",

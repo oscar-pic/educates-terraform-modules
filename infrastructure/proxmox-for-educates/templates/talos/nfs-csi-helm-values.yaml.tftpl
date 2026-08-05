@@ -1,0 +1,15 @@
+storageClass:
+  create: false
+controller:
+  replicas: ${replica_count}
+  nodeSelector:
+    role: "worker"
+  tolerations:
+    - operator: Exists
+      effect: NoSchedule
+node:
+  nodeSelector:
+    role: "worker"
+  tolerations:
+    - operator: Exists
+      effect: NoSchedule

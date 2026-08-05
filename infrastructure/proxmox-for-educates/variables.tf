@@ -26,11 +26,28 @@ variable "proxmox_nodes" {
   default = ["proxmox-server"]
 }
 
-variable "proxmox_nodes_ceph_IPs" {
-  type    = list(string)
+variable "k8s_storage_backend" {
+  description = "CSI storage backend(s) to install for the K8s PVCs. Options: 'ceph' (RBD+CephFS), 'nfs', or 'both'. Not used by k3s-single-node."
+  type        = string
+  default     = "ceph"
+
+  validation {
+    condition     = contains(["ceph", "nfs", "both"], var.k8s_storage_backend)
+    error_message = "k8s_storage_backend must be one of: ceph, nfs, both."
+  }
 }
 
-variable "proxmox_endpoint" { 
+variable "proxmox_nodes_ceph_IPs" {
+  type    = list(string)
+  default = []
+
+  validation {
+    condition     = var.deployment_flavor == "k3s-single-node" || !contains(["ceph", "both"], var.k8s_storage_backend) || length(var.proxmox_nodes_ceph_IPs) > 0
+    error_message = "proxmox_nodes_ceph_IPs must list at least one Ceph monitor IP when k8s_storage_backend is 'ceph' or 'both'."
+  }
+}
+
+variable "proxmox_endpoint" {
   type    = string
   default = "https://192.168.1.28:8006" 
 }
@@ -50,6 +67,46 @@ variable "proxmox_ceph_k8s_key" {
   type        = string
   description = "The Ceph client.kubernetes authentication key encoded in base64."
   sensitive   = true
+  default     = ""
+
+  validation {
+    condition     = var.deployment_flavor == "k3s-single-node" || !contains(["ceph", "both"], var.k8s_storage_backend) || var.proxmox_ceph_k8s_key != ""
+    error_message = "proxmox_ceph_k8s_key must be set when k8s_storage_backend is 'ceph' or 'both'."
+  }
+}
+
+variable "nfs_csi_version" {
+  type        = string
+  description = "csi-driver-nfs Helm chart version (chart and appVersion share the same version scheme)"
+  default     = "4.13.4"
+}
+
+variable "nfs_csi_server_address" {
+  description = "IP or hostname of the external NFS server backing the NFS CSI StorageClass"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.deployment_flavor == "k3s-single-node" || !contains(["nfs", "both"], var.k8s_storage_backend) || var.nfs_csi_server_address != ""
+    error_message = "nfs_csi_server_address must be set when k8s_storage_backend is 'nfs' or 'both'."
+  }
+}
+
+variable "nfs_csi_share_path" {
+  description = "Existing NFS export path used as the root for dynamic per-PVC subdirectory provisioning"
+  type        = string
+  default     = "/"
+
+  validation {
+    condition     = var.deployment_flavor == "k3s-single-node" || !contains(["nfs", "both"], var.k8s_storage_backend) || var.nfs_csi_share_path != ""
+    error_message = "nfs_csi_share_path must be set when k8s_storage_backend is 'nfs' or 'both'."
+  }
+}
+
+variable "nfs_csi_mount_options" {
+  description = "Mount options applied to the NFS StorageClass"
+  type        = list(string)
+  default     = ["nfsvers=4.1"]
 }
 
 variable "k8s_cert_strategy" {

@@ -50,6 +50,12 @@ locals {
   rke2_registration_address          = try(local.rke2_registration_ip, null)
   rke2_kubeconfig_k8s_cluster_api_ip = try(local.rke2_api_ip, null)
 
+  # Which CSI storage backend(s) to install
+  rke2_deploy_ceph_csi = contains(["ceph", "both"], var.k8s_storage_backend)
+  rke2_deploy_nfs_csi  = contains(["nfs", "both"], var.k8s_storage_backend)
+
+  # hostNetwork CSI pods can't share a node (port collision), so replicas can't exceed worker count
+  rke2_csi_replica_count = max(1, min(length(local.rke2_worker_node_map), 3))
 }
 
 ###############################################################################
@@ -268,7 +274,7 @@ resource "local_file" "save_kubeconfig_rke2" {
   for_each = local.rke2_bootstrap_node_map
 
   content  = ssh_resource.k8s_config_rke2[each.key].result
-  filename = "${path.root}/build/${split("-", var.deployment_flavor)[0]}/k8s_config.yaml"
+  filename = "${path.root}/build/${split("-", var.deployment_flavor)[0]}/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
 }
 
 ###############################################################################
@@ -276,7 +282,7 @@ resource "local_file" "save_kubeconfig_rke2" {
 ###############################################################################
 resource "null_resource" "rke2_ceph_csi_setup" {
   # Trigger only after the bootstrap server's control plane is fully verified
-  for_each   = local.rke2_bootstrap_node_map
+  for_each   = local.rke2_deploy_ceph_csi ? local.rke2_bootstrap_node_map : {}
   depends_on = [null_resource.rke2_bootstrap]
 
   connection {
@@ -298,7 +304,7 @@ resource "null_resource" "rke2_ceph_csi_setup" {
   # Upload the template Ceph Storage Ceph RDB CSI Helm
   provisioner "file" {
     content = templatefile("${path.module}/templates/rke2/08-ceph-rbd-csi-helm.yaml.tftpl", {
-      replica_count = length(var.kube_nodes) == 1 ? 1 : 3
+      replica_count = local.rke2_csi_replica_count
       ceph_version  = var.k8s_ceph_version
     })
     destination = "/tmp/08-ceph-rbd-csi-helm.yaml"
@@ -307,7 +313,7 @@ resource "null_resource" "rke2_ceph_csi_setup" {
   # Upload the template Ceph Storage Ceph FS CSI Helm
   provisioner "file" {
     content = templatefile("${path.module}/templates/rke2/09-ceph-fs-csi-helm.yaml.tftpl", {
-      replica_count = length(var.kube_nodes) == 1 ? 1 : 3
+      replica_count = local.rke2_csi_replica_count
       ceph_version  = var.k8s_ceph_version
     })
     destination = "/tmp/09-ceph-fs-csi-helm.yaml"
@@ -410,13 +416,91 @@ provisioner "remote-exec" {
 }
 
 ###############################################################################
+# STEP 2b: DEPLOY NFS CSI FOR RKE2
+###############################################################################
+resource "null_resource" "rke2_nfs_csi_setup" {
+  # Trigger only after the bootstrap server's control plane is fully verified
+  for_each   = local.rke2_deploy_nfs_csi ? local.rke2_bootstrap_node_map : {}
+  depends_on = [null_resource.rke2_bootstrap]
+
+  connection {
+    type        = "ssh"
+    user        = each.value.vm_user
+    host        = split("/", each.value.ip_address)[0]
+    private_key = file(var.ssh_private_key_path)
+  }
+
+  # Upload the template NFS StorageClass
+  provisioner "file" {
+    content = templatefile("${path.module}/templates/common/10-nfs-csi-requisites.yaml.tftpl", {
+      is_default_class = var.k8s_storage_backend == "nfs"
+      nfs_server       = var.nfs_csi_server_address
+      nfs_share        = var.nfs_csi_share_path
+      mount_options    = var.nfs_csi_mount_options
+      cluster_name     = var.k8s_cluster_name
+    })
+    destination = "/tmp/10-nfs-csi-requisites.yaml"
+  }
+
+  # Upload the template NFS CSI Helm
+  provisioner "file" {
+    content = templatefile("${path.module}/templates/rke2/11-nfs-csi-helm.yaml.tftpl", {
+      replica_count   = local.rke2_csi_replica_count
+      nfs_csi_version = var.nfs_csi_version
+    })
+    destination = "/tmp/11-nfs-csi-helm.yaml"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -e",
+      "KCONF='/etc/rancher/rke2/rke2.yaml'",
+
+      "echo '📦 Deploying NFS CSI into RKE2 kubernetes cluster...'",
+      "echo '📦 Creating nfs-system namespace...'",
+      "sudo kubectl --kubeconfig $KCONF create namespace nfs-system --dry-run=client -o yaml | sudo kubectl --kubeconfig $KCONF apply -f -",
+      "RETRIES=0",
+      "until sudo kubectl --kubeconfig $KCONF get namespace nfs-system &>/dev/null || [ $RETRIES -eq 10 ]; do",
+      "  echo \"   -> Waiting for namespace nfs-system to be ready...\"",
+      "  sleep 3",
+      "  RETRIES=$((RETRIES+1))",
+      "done",
+      "if [ $RETRIES -eq 10 ]; then echo \"❌ ERROR: Namespace nfs-system not ready!\"; exit 1; fi",
+      "echo \"✅ Namespace nfs-system is ready.\"",
+
+      "echo '🚚 Applying NFS CSI StorageClass...'",
+      "sudo kubectl --kubeconfig $KCONF apply -f /tmp/10-nfs-csi-requisites.yaml",
+
+      "echo '🚚 Deploying NFS CSI HelmChart manifest...'",
+      "sudo kubectl --kubeconfig $KCONF apply -f /tmp/11-nfs-csi-helm.yaml",
+      "echo '✅ NFS CSI manifests successfully applied via kubectl.'",
+
+      "echo \"⏳ Verifying HelmChart object deployment in API...\"",
+      "until sudo kubectl --kubeconfig $KCONF get helmchart/csi-driver-nfs -n kube-system > /dev/null 2>&1; do",
+      "  echo \"  - helmchart csi-driver-nfs object not registered yet, waiting...\"",
+      "  sleep 3",
+      "done",
+      "echo '✅ NFS CSI HelmChart accepted by API. Replicas will schedule as soon as workers join.'",
+
+      "echo \"⏳ Waiting for NFS CSI resources to exist in the API...\"",
+      "until sudo kubectl --kubeconfig $KCONF get daemonset/csi-nfs-node -n nfs-system > /dev/null 2>&1; do",
+      "  echo \"  - daemonset csi-nfs-node not created yet, waiting...\"",
+      "  sleep 5",
+      "done",
+
+      "echo '✅ NFS CSI NodePlugin deployed, workers will join soon...'"
+    ]
+  }
+}
+
+###############################################################################
 # STEP 3: JOIN THE ADDITIONAL NODES (RKE2 Multinode Only)
 ###############################################################################
 resource "null_resource" "rke2_join_cp" {
   for_each = { for k, v in local.rke2_joiner_node_map : k => v if v.type == "rke2-server" }
 
-  # CRUCIAL: No node attempts to join until the Bootstrap an Ceph CSI are operational
-  depends_on = [null_resource.rke2_ceph_csi_setup]
+  # CRUCIAL: No node attempts to join until the Bootstrap and CSI setup are operational
+  depends_on = [null_resource.rke2_ceph_csi_setup, null_resource.rke2_nfs_csi_setup]
 
   triggers = {
     # This ID will only change if the VM is destroyed and recreated
@@ -1004,10 +1088,10 @@ resource "null_resource" "rke2_reboot_node_needed" {
       "if [ -f /var/run/reboot-required ]; then",
       "  echo '⚠️  WARNING: System restart IS required for Node ${each.key}'",
       "  echo 'To reboot safely, run:'",
-      "  echo 'kubectl drain ${split("-", var.deployment_flavor)[0]}-${each.key} --ignore-daemonsets --delete-emptydir-data'",
+      "  echo 'kubectl drain ${each.key} --ignore-daemonsets --delete-emptydir-data'",
       "  echo 'And then: sudo reboot'",
       "  echo 'After reboot, run:'",
-      "  echo 'kubectl uncordon ${split("-", var.deployment_flavor)[0]}-${each.key}'",
+      "  echo 'kubectl uncordon ${each.key}'",
       "  echo '⚠️  OF COURSE, DO NOT REBOOT ANY NODE UNTIL ALL NODES ARE JOINED AND READY!'",
       "  sleep 10",
       "else",

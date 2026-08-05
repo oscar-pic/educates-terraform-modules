@@ -41,8 +41,13 @@ The framework provisions a redundant, high-performance dual-stack network archit
 
 ### C. Storage Backends
 
+The datastores below (Proxmox-level, for VM disks/ISOs/snippets) are unrelated to the Kubernetes
+CSI storage backend that PVCs actually get provisioned from — the latter is selected independently
+via `k8s_storage_backend` (see §3.C).
+
 * **Shared Snippets Datastore**: A shared storage repository (e.g., `nfs-shared`) must be active across all hypervisor nodes. It **must** explicitly accept both `ISO Image` and `Snippets` content structures to allow automated Cloud-Init meta-data generation.
-* **Ceph Storage Cluster**: Hypervisor-level `RBD` (Block Storage) and `CephFS` (Shared File System) storage pools must be fully operational. The Ceph cluster `FSID` (Cluster UUID) and base64 authentication keys are injected at runtime to configure the dynamic Kubernetes CSI drivers automatically.
+* **Ceph Storage Cluster** (when `k8s_storage_backend` is `ceph` or `both`): Hypervisor-level `RBD` (Block Storage) and `CephFS` (Shared File System) storage pools must be fully operational. The Ceph cluster `FSID` (Cluster UUID) and base64 authentication keys are injected at runtime to configure the dynamic Kubernetes CSI drivers automatically.
+* **External NFS Server** (when `k8s_storage_backend` is `nfs` or `both`): a separate, already-existing NFS export (e.g. Synology, TrueNAS) reachable from the storage network. Terraform does not create or manage this export, only the `csi-driver-nfs` StorageClass pointing at it — see `nfs_csi_server_address`/`nfs_csi_share_path` below.
 
 ---
 
@@ -64,7 +69,6 @@ Cluster topologies and deployment strategies are managed via variable definition
 
 | Variable | Description | Default / Example |
 | :--- | :--- | :--- |
-| `proxmox_image_storage_pool` | Target storage pool where base OS cloud images are downloaded. | `"local"` |
 | `proxmox_image_url` | Remote HTTPS source URL to fetch the base Linux cloud image. | Cloud-Init Ubuntu image URL |
 | `proxmox_image_filename` | Expected local filename for the stored template disk image. | `"ubuntu-24-cloud.img"` |
 
@@ -74,8 +78,13 @@ Cluster topologies and deployment strategies are managed via variable definition
 | :--- | :--- | :--- |
 | `proxmox_images_snippets_datastore` | Storage configuration target mapping for scripts and snippets. | `{"name": "nfs-shared", "shared": true}` |
 | `proxmox_vms_datastore` | Storage configuration target mapping for virtual machine disks. | `{"name": "ceph-shared", "shared": true}` |
-| `proxmox_ceph_clusterID` | Unique Ceph Cluster UUID (`FSID`) required for CSI operations. | `"80a345ca-6a31-4abb-a443-5b3f5efc41d7"` |
-| `proxmox_ceph_k8s_key` | Base64-encoded authentication key for the `client.kubernetes` user. | `AQDQOg9q...==` |
+| `k8s_storage_backend` | Which K8s CSI storage backend(s) to install for PVCs. Not used by `k3s-single-node`. | `'ceph'` (default, RBD+CephFS), `'nfs'`, or `'both'` |
+| `proxmox_ceph_clusterID` | Unique Ceph Cluster UUID (`FSID`). Required when `k8s_storage_backend` is `ceph`/`both`. | `"80a345ca-6a31-4abb-a443-5b3f5efc41d7"` |
+| `proxmox_ceph_k8s_key` | Base64-encoded authentication key for the `client.kubernetes` user. Required when `k8s_storage_backend` is `ceph`/`both`. | `AQDQOg9q...==` |
+| `nfs_csi_version` | `csi-driver-nfs` Helm chart version. | `"4.13.4"` |
+| `nfs_csi_server_address` | IP/hostname of the external NFS server. Required when `k8s_storage_backend` is `nfs`/`both`. | `"10.10.60.10"` |
+| `nfs_csi_share_path` | Export path used as the root for dynamic per-PVC subdirectory provisioning. Required when `k8s_storage_backend` is `nfs`/`both`. | `"/volume1/k8s"` |
+| `nfs_csi_mount_options` | Mount options applied to the NFS StorageClass. | `["nfsvers=4.1"]` |
 | `k8s_cert_strategy` | Certificate issuing automation logic. | `'self-signed'`, `'provided'`, or `'letsencrypt'` |
 | `k8s_certs_path` | Local workspace relative path containing custom TLS keys. | `"./certs"` |
 | `k8s_apps_cert_domains` | Target domains for routing rules (Required for Let's Encrypt). | `["*.k3s-apps.lab.inet"]` |
@@ -153,7 +162,8 @@ The `kube_nodes` map acts as the complete definitive blueprint for your topology
         vm_cores            = 8
         vm_memory           = 16384
         vm_disk_size        = 60
-        # CRITICAL: 'storage-server=ceph-csi' label enforces dynamic Ceph persistent scheduling placement
+        # NOTE: 'storage-server=ceph-csi'/'storage-server=nfs-csi' are informational only — actual
+        # CSI scheduling is constrained by the 'role=worker' label, not by 'storage-server'
         node_labels         = ["flavor=talos-worker", "role=worker", "os=talos", "storage-server=ceph-csi"]
       }
     }
@@ -162,50 +172,57 @@ The `kube_nodes` map acts as the complete definitive blueprint for your topology
 
 ## 6. Execution Workflow (Automation Wrappers)
 
-To prevent workspace crossover and handle automated state migrations smoothly, **do not invoke raw Terraform commands directly**. Instead, utilize the custom orchestration scripts designed for your workstation platform.
+To prevent state crossover and handle automated state migrations smoothly, **do not invoke raw Terraform commands directly**. Instead, utilize the custom orchestration scripts designed for your workstation platform.
+
+Both wrappers use Terraform's `local` backend with an explicit `path` computed from
+`build/<flavor>/<environment>/<k8s_cluster_name>/terraform.tfstate` — read straight out of the
+`vars/<flavor>.tfvars` file you're operating on, not from Terraform workspaces (none are used).
+This means state is isolated per cluster, not just per flavor: `talos.tfvars` and, say,
+`talos-on-axlab.tfvars` (different `k8s_cluster_name`) never share state even though both use
+`FLAVOR=talos`.
 
 Select the tool corresponding to your operating system platform:
 
 ### Option A: Linux or macOS Systems — Using `Makefile`
 
-All workflow tasks require the explicit invocation of the `FLAVOR` variable flag (`k3s`, `rke2`, or `talos`).
+All workflow tasks require the explicit invocation of the `FLAVOR` variable flag (`k3s`, `rke2`, or `talos`). An optional `PARALLELISM=n` caps concurrent Terraform operations (e.g. `PARALLELISM=1` to serialize them).
 
 #### 1. Analyze and Plan Infrastructure Build
 
-Validates backend configuration targets, handles backend migration logic checks, locks the flavor workspace environment, and writes a secured plan output artifact file:
+Initializes the backend at the flavor/environment/cluster-scoped path (auto-migrating state if the path just changed), and writes a secured plan output artifact file:
 
-    make plan FLAVOR=talos
+    make plan FLAVOR=talos [PARALLELISM=1]
 
 #### 2. Execute Infrastructure Rollout (Apply)
 
 Applies the pre-compiled deployment blueprint artifact safely to your Proxmox VE infrastructure.
-*Note: Always use this specific wrapper command instead of standard vanilla terraform commands post-plan to ensure all downstream output variables remain tied to the correct workspace.*
+*Note: Always use this specific wrapper command instead of standard vanilla terraform commands post-plan to ensure all downstream output variables remain tied to the correct state.*
 
-    make apply FLAVOR=talos
+    make apply FLAVOR=talos [PARALLELISM=1]
 
 #### 3. Full Infrastructure Teardown (Destroy)
 
-Triggers a safe, un-attended full teardown sequence isolated exclusively to the specified cluster flavor workspace:
+Triggers a safe, un-attended full teardown sequence isolated exclusively to the specified cluster's state:
 
-    make destroy FLAVOR=talos
+    make destroy FLAVOR=talos [PARALLELISM=1]
 
 ---
 
 ### Option B: Windows Systems — Using `PowerShell Core`
 
-The `deploy.ps1` script implements the same strict workspace guardrails, keeping infrastructure actions completely separated.
+The `deploy.ps1` script implements the same flavor/environment/cluster-scoped state isolation, keeping infrastructure actions completely separated. An optional `-Parallelism n` caps concurrent Terraform operations.
 
 #### 1. Analyze and Plan Infrastructure Build
 
-    .\deploy.ps1 -Flavor talos -Action plan
+    .\deploy.ps1 -Flavor talos -Action plan [-Parallelism 1]
 
 #### 2. Execute Infrastructure Rollout (Apply)
 
-    .\deploy.ps1 -Flavor talos -Action apply
+    .\deploy.ps1 -Flavor talos -Action apply [-Parallelism 1]
 
 #### 3. Full Infrastructure Teardown (Destroy)
 
-    .\deploy.ps1 -Flavor talos -Action destroy
+    .\deploy.ps1 -Flavor talos -Action destroy [-Parallelism 1]
 
 #### CLI Help Dashboard
 
@@ -229,3 +246,9 @@ Execute the following commands in your local workstation terminal to verify oper
 
     # 3. Confirm that Ceph CSI storage-server scheduling labels match allocations
     kubectl get nodes --show-labels
+
+    # 4. Confirm the CSI StorageClass(es) selected via k8s_storage_backend are present
+    kubectl get storageclass
+
+    # 5. (Talos only) talosctl already defaults to the bootstrap node, no --nodes needed
+    talosctl --talosconfig build/<flavor>/talosconfig get members

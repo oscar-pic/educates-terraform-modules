@@ -70,16 +70,31 @@ locals {
   })
 
   # Common configuration for Ceph CSI
+  # hostNetwork CSI pods can't share a node (port collision), so replicas can't exceed worker count
   talos_ceph_csi_values = {
     clusterID          = var.proxmox_ceph_clusterID
     ceph_monitors_list = var.proxmox_nodes_ceph_IPs
-    replica_count      = length(var.kube_nodes) == 1 ? 1 : 3
+    replica_count      = max(1, min(length(local.talos_worker_nodes), 3))
   }
+
+  # Which CSI storage backend(s) to install
+  talos_deploy_ceph_csi = local.is_talos_deployment && contains(["ceph", "both"], var.k8s_storage_backend)
+  talos_deploy_nfs_csi  = local.is_talos_deployment && contains(["nfs", "both"], var.k8s_storage_backend)
+
+  talos_nfs_csi_requisites_rendered_yaml = templatefile("${path.module}/templates/common/10-nfs-csi-requisites.yaml.tftpl", {
+    is_default_class = var.k8s_storage_backend == "nfs"
+    nfs_server       = var.nfs_csi_server_address
+    nfs_share        = var.nfs_csi_share_path
+    mount_options    = var.nfs_csi_mount_options
+    cluster_name     = var.k8s_cluster_name
+  })
+
+  talos_nfs_csi_replica_count = max(1, min(length(local.talos_worker_nodes), 3))
 }
 
 provider "helm" {
   kubernetes = {
-    config_path = "${path.root}/build/talos/k8s_config.yaml"
+    config_path = "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
     host        = "https://${local.talos_bootstrap_node_ip}:6443"
     insecure    = true
   }
@@ -140,7 +155,7 @@ data "talos_machine_configuration" "talos_config" {
         }
         network = {
           #hostname = each.key
-          hostname = "${split("-", var.deployment_flavor)[0]}-${each.key}"
+          hostname = "${var.k8s_cluster_name}-${each.key}"
           interfaces = [
             {
               interface = var.k8s_api_cp_interface
@@ -179,6 +194,12 @@ data "talos_client_configuration" "talos_config_data" {
   cluster_name         = var.k8s_cluster_name
   client_configuration = talos_machine_secrets.talos_cluster_secrets[0].client_configuration
   endpoints            = [for k, v in local.talos_cp_nodes : split("/", v.ip_address)[0]]
+  # Default node so `talosctl` subcommands (e.g. `get members`) work out of the box
+  # without requiring an explicit `--nodes` flag on every invocation. Deliberately a
+  # single node, not every control-plane IP: cluster-wide queries (e.g. `get members`)
+  # get sent to every node in the default list and print one duplicate result set per
+  # node, so a single entrypoint is enough (use `-n <ip>` to target a specific node).
+  nodes = [local.talos_bootstrap_node_ip]
 }
 
 resource "null_resource" "wait_for_talos" {
@@ -194,13 +215,13 @@ resource "null_resource" "wait_for_talos" {
       %{if local.is_windows}
       Write-Host "Waiting for Talos API on ${local.talos_bootstrap_node_ip}..." -ForegroundColor Cyan
       do {
-        $status = talosctl --talosconfig ./build/talos/talosconfig -n ${local.talos_bootstrap_node_ip} get members 2>&1
+        $status = talosctl --talosconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/talosconfig -n ${local.talos_bootstrap_node_ip} get members 2>&1
         Start-Sleep -Seconds 5
       } until ($LASTEXITCODE -eq 0)
       Write-Host "Talos API is up and running!" -ForegroundColor Green
       %{else}
       echo "Waiting for Talos API on ${local.talos_bootstrap_node_ip}..."
-      until talosctl --talosconfig ./build/talos/talosconfig -n ${local.talos_bootstrap_node_ip} get members >/dev/null 2>&1; do
+      until talosctl --talosconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/talosconfig -n ${local.talos_bootstrap_node_ip} get members >/dev/null 2>&1; do
         sleep 5
       done
       echo "Talos API is up and running!"
@@ -230,13 +251,13 @@ resource "local_file" "talosconfig" {
   count = local.is_talos_deployment ? 1 : 0
 
   content  = data.talos_client_configuration.talos_config_data[0].talos_config
-  filename = "${path.root}/build/talos/talosconfig"
+  filename = "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/talosconfig"
 }
 
 resource "local_file" "kubeconfig" {
   count    = local.is_talos_deployment ? 1 : 0
   content  = talos_cluster_kubeconfig.kubeconfig_auth[0].kubeconfig_raw
-  filename = "${path.root}/build/talos/k8s_config.yaml"
+  filename = "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
 }
 
 resource "null_resource" "talos_wait_for_cluster_readiness" {
@@ -252,7 +273,7 @@ resource "null_resource" "talos_wait_for_cluster_readiness" {
         $ip = $nodes[$name];
         Write-Host "Checking services on node $name ($ip)..." -ForegroundColor Cyan;
         do {
-          $services = talosctl --talosconfig ./build/talos/talosconfig -n $ip get services;
+          $services = talosctl --talosconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/talosconfig -n $ip get services;
           $ready = ($services | Select-String "kubelet|containerd" | Where-Object { $_ -match "true\s+true" } | Measure-Object).Count;
           Start-Sleep -Seconds 10;
         } until ($ready -ge 2);
@@ -260,18 +281,18 @@ resource "null_resource" "talos_wait_for_cluster_readiness" {
       Write-Host "Waiting for node ${local.talos_bootstrap_node_ip} to join K8s API..." -ForegroundColor Cyan
       do {
         # IMPORTANT: Use the bootstrap node IP directly, bypass the VIP
-        $nodesCount = (kubectl --kubeconfig ./build/talos/k8s_config.yaml -s https://${local.talos_bootstrap_node_ip}:6443 get nodes --insecure-skip-tls-verify | Select-String "Ready|NotReady" | Measure-Object).Count
+        $nodesCount = (kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml -s https://${local.talos_bootstrap_node_ip}:6443 get nodes --insecure-skip-tls-verify | Select-String "Ready|NotReady" | Measure-Object).Count
         Start-Sleep -Seconds 10
       } until ($nodesCount -ge ${length(var.kube_nodes)})
       %{else}
       %{for k, v in var.kube_nodes}
       echo "Checking services on node ${k} (${split("/", v.ip_address)[0]})..."
-      until talosctl --talosconfig ./build/talos/talosconfig -n ${split("/", v.ip_address)[0]} get services | grep -E "kubelet|containerd" | awk '{if($6=="true" && $7=="true") print "OK"}' | wc -l | grep -q "2"; do
+      until talosctl --talosconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/talosconfig -n ${split("/", v.ip_address)[0]} get services | grep -E "kubelet|containerd" | awk '{if($6=="true" && $7=="true") print "OK"}' | wc -l | grep -q "2"; do
         sleep 10
       done
       %{endfor}
       echo "Waiting for nodes to join K8s API..."
-      until kubectl --kubeconfig ./build/talos/k8s_config.yaml -s https://${local.talos_bootstrap_node_ip}:6443 get nodes --insecure-skip-tls-verify | grep -c "Ready\|NotReady" | grep -q "${length(var.kube_nodes)}"; do
+      until kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml -s https://${local.talos_bootstrap_node_ip}:6443 get nodes --insecure-skip-tls-verify | grep -c "Ready\|NotReady" | grep -q "${length(var.kube_nodes)}"; do
         sleep 10
       done
       %{endif}
@@ -285,10 +306,10 @@ resource "terraform_data" "cilium_namespace_setup" {
 
   provisioner "local-exec" {
     command = <<EOT
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml create namespace cilium-system --dry-run=client -o yaml | kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f -
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml label namespace cilium-system pod-security.kubernetes.io/enforce=privileged --overwrite
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml label namespace cilium-system pod-security.kubernetes.io/audit=privileged --overwrite
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml label namespace cilium-system pod-security.kubernetes.io/warn=privileged --overwrite
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml create namespace cilium-system --dry-run=client -o yaml | kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f -
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml label namespace cilium-system pod-security.kubernetes.io/enforce=privileged --overwrite
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml label namespace cilium-system pod-security.kubernetes.io/audit=privileged --overwrite
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml label namespace cilium-system pod-security.kubernetes.io/warn=privileged --overwrite
     EOT
     quiet = true
   }
@@ -329,7 +350,7 @@ resource "null_resource" "talos_wait_for_cilium" {
     # We use the bootstrap node IP (-s) to ensure the connection before the VIP works
     command = <<-EOT
       echo "⏳ Waiting for Cilium operator to start..."
-      until kubectl --kubeconfig ./build/talos/k8s_config.yaml \
+      until kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml \
             -s https://${local.talos_bootstrap_node_ip}:6443 \
             --insecure-skip-tls-verify \
             rollout status deployment/cilium-operator -n cilium-system --timeout=300s; do
@@ -349,9 +370,9 @@ resource "null_resource" "talos_create_gateway_namespace" {
   provisioner "local-exec" {
     command = <<-EOT
       echo '📦 Ensuring gateway-system namespace exists...'
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml create namespace gateway-system --dry-run=client -o yaml | kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f -
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml create namespace gateway-system --dry-run=client -o yaml | kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f -
       
-      until kubectl --kubeconfig ./build/talos/k8s_config.yaml get namespace gateway-system &>/dev/null; do
+      until kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml get namespace gateway-system &>/dev/null; do
         echo "   -> Waiting for gateway-system to be ready..."
         sleep 3
       done
@@ -368,7 +389,7 @@ resource "null_resource" "talos_provided_tls_secret_cert" {
   provisioner "local-exec" {
     command = <<EOT
       echo '⚙️  Generating Secret for Provided certs...'
-      echo '${local.provided_cert_rendered_yaml}' | kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f -
+      echo '${local.provided_cert_rendered_yaml}' | kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f -
       sleep 5
     EOT
     quiet = true
@@ -404,7 +425,7 @@ resource "null_resource" "talos_wait_for_cert_manager_ready" {
   provisioner "local-exec" {
     command = <<EOT
       echo "⏳ Waiting for all cert-manager pods to be in Ready..."
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml wait --for=condition=Ready pod -n cert-manager --all --timeout=120s
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml wait --for=condition=Ready pod -n cert-manager --all --timeout=120s
       echo "✅ All cert-manager pods are ready."
     EOT
     quiet = true
@@ -418,7 +439,7 @@ resource "null_resource" "talos_self_signed_issuer" {
   provisioner "local-exec" {
     command = <<EOT
       echo "🚀 Applying ClusterIssuer 'self-signed-issuer'..."
-      cat <<EOF | kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f -
+      cat <<EOF | kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f -
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -428,7 +449,7 @@ spec:
 EOF
       # Verify the Issuer is ready
       echo "⏳ Waiting for ClusterIssuer 'self-signed-issuer' to be ready..."
-      until kubectl --kubeconfig ./build/talos/k8s_config.yaml get clusterissuer self-signed-issuer -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q "True"; do
+      until kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml get clusterissuer self-signed-issuer -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q "True"; do
         sleep 5
       done
       echo "✅ ClusterIssuer is ready."
@@ -445,7 +466,7 @@ resource "null_resource" "talos_self_signed_cert" {
   provisioner "local-exec" {
     command = <<EOT
       echo '⚙️  Generating self-signed wildcard certs...'
-      echo '${local.self_signed_cert_rendered_yaml}' | kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f -
+      echo '${local.self_signed_cert_rendered_yaml}' | kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f -
       sleep 5
     EOT
     quiet = true
@@ -459,7 +480,7 @@ resource "null_resource" "talos_letsencrypt_cert" {
   provisioner "local-exec" {
     command = <<EOT
       echo '⚙️  Generating Lets Encrypt wildcard certs...'
-      echo '${local.letsencrypt_cert_rendered_yaml}' | kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f -
+      echo '${local.letsencrypt_cert_rendered_yaml}' | kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f -
       sleep 5
     EOT
     quiet = true
@@ -485,29 +506,29 @@ resource "null_resource" "talos_cilium_gateway_setup" {
     command = <<EOT
       echo '🌐 Deploying Gateway API CRDs...'
       # Download the standard install manifest for Gateway API
-      #kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
+      #kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
       # Cilium needs from 1.19.5 the 1.6.0 experimental-install CRDS. If not, it doesn't start up
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml apply --server-side=true --force-conflicts -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.0/experimental-install.yaml
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply --server-side=true --force-conflicts -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.0/experimental-install.yaml
 
       # We wait for those CRDs, that are critical to Gateway API before continue
       echo '⏳ Waiting for Gateway API CRDs to be registered by Talos...'
-      until kubectl --kubeconfig ./build/talos/k8s_config.yaml get gatewayclasses.gateway.networking.k8s.io &>/dev/null && \
-            kubectl --kubeconfig ./build/talos/k8s_config.yaml get gateways.gateway.networking.k8s.io &>/dev/null && \
-            kubectl --kubeconfig ./build/talos/k8s_config.yaml get httproutes.gateway.networking.k8s.io &>/dev/null && \
-            kubectl --kubeconfig ./build/talos/k8s_config.yaml get tlsroutes.gateway.networking.k8s.io &>/dev/null; do
+      until kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml get gatewayclasses.gateway.networking.k8s.io &>/dev/null && \
+            kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml get gateways.gateway.networking.k8s.io &>/dev/null && \
+            kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml get httproutes.gateway.networking.k8s.io &>/dev/null && \
+            kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml get tlsroutes.gateway.networking.k8s.io &>/dev/null; do
         sleep 5
       done
       echo '✅ Gateway API CRDs successfully registered!'
 
-      echo '${local.gateway_rendered_yaml}' | kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f -
+      echo '${local.gateway_rendered_yaml}' | kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f -
       echo '✅ Gateway API configuration deployed.'
       sleep 10
 
       echo '🚀 Restarting Cilium Operator to accept the Gateway API CRDs...'
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml rollout restart deployment -n cilium-system cilium-operator
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml rollout restart deployment -n cilium-system cilium-operator
       
       echo '⏳ Waiting for Cilium Operator be Ready...'
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml rollout status deployment/cilium-operator -n cilium-system --timeout=300s
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml rollout status deployment/cilium-operator -n cilium-system --timeout=300s
       echo '✅ Gateway API and Cilium Operador Running & Ready.'
       sleep 20
     EOT
@@ -517,7 +538,7 @@ resource "null_resource" "talos_cilium_gateway_setup" {
 
 resource "null_resource" "talos_ceph_csi_requisites" {
 
-  count      = local.is_talos_deployment ? 1 : 0
+  count      = local.talos_deploy_ceph_csi ? 1 : 0
   depends_on = [null_resource.talos_cilium_gateway_setup]
 
   provisioner "local-exec" {
@@ -526,25 +547,25 @@ resource "null_resource" "talos_ceph_csi_requisites" {
 
       # Pre-load images to all nodes before deployment
       echo "🚀 Pre-loading Ceph CSI (${var.k8s_ceph_version}) images on Talos worker nodes..."
-      talosctl --talosconfig ./build/talos/talosconfig image pull quay.io/cephcsi/cephcsi:v${var.k8s_ceph_version} --nodes ${local.talos_workers_nodes_ips} --namespace cri
+      talosctl --talosconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/talosconfig image pull quay.io/cephcsi/cephcsi:v${var.k8s_ceph_version} --nodes ${local.talos_workers_nodes_ips} --namespace cri
       echo '✅ Images pre-loaded.'
       sleep 5
 
       echo '📦 Creating namespace ceph-system...'
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml create namespace ceph-system --dry-run=client -o yaml | kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f -
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml label namespace ceph-system pod-security.kubernetes.io/enforce=privileged --overwrite
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml label namespace ceph-system pod-security.kubernetes.io/audit=privileged --overwrite
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml label namespace ceph-system pod-security.kubernetes.io/warn=privileged --overwrite
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml create namespace ceph-system --dry-run=client -o yaml | kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f -
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml label namespace ceph-system pod-security.kubernetes.io/enforce=privileged --overwrite
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml label namespace ceph-system pod-security.kubernetes.io/audit=privileged --overwrite
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml label namespace ceph-system pod-security.kubernetes.io/warn=privileged --overwrite
 
       sleep 10
 
       echo '📦 Deploying Ceph CSI Secret and StorageClass...'
-      cat <<-EOT > "./build/talos/rendered_ceph_config.yaml"
+      cat <<-EOT > "./build/talos/${var.environment}/${var.k8s_cluster_name}/rendered_ceph_config.yaml"
       ${local.ceph_csi_requisites_redered_yaml}
       EOT
-      kubectl --kubeconfig ./build/talos/k8s_config.yaml apply -f "./build/talos/rendered_ceph_config.yaml"
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f "./build/talos/${var.environment}/${var.k8s_cluster_name}/rendered_ceph_config.yaml"
       sleep 5
-      rm -f "./build/talos/rendered_ceph_config.yaml"
+      rm -f "./build/talos/${var.environment}/${var.k8s_cluster_name}/rendered_ceph_config.yaml"
       echo '✅ Ceph CSI Secret and StorageClass successfully deployed.'
       sleep 15
     EOF
@@ -554,8 +575,8 @@ resource "null_resource" "talos_ceph_csi_requisites" {
 }
 
 resource "null_resource" "talos_ceph_csi_shared_config" {
-  count      = local.is_talos_deployment ? 1 : 0
-  
+  count      = local.talos_deploy_ceph_csi ? 1 : 0
+
   depends_on = [
     null_resource.talos_ceph_csi_requisites
   ]
@@ -567,11 +588,12 @@ resource "null_resource" "talos_ceph_csi_shared_config" {
         monitors  = [for node in local.talos_ceph_csi_values.ceph_monitors_list : "${node}:6789"]
       }
     ])
+    kubeconfig_path = "./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
   }
 
   provisioner "local-exec" {
     command = <<-EOT
-      cat <<-EOF | kubectl --kubeconfig=./build/talos/k8s_config.yaml apply -f -
+      cat <<-EOF | kubectl --kubeconfig=${self.triggers.kubeconfig_path} apply -f -
       apiVersion: v1
       kind: ConfigMap
       metadata:
@@ -588,13 +610,13 @@ resource "null_resource" "talos_ceph_csi_shared_config" {
 
   provisioner "local-exec" {
     when    = destroy
-    command = "kubectl --kubeconfig=./build/talos/k8s_config.yaml delete configmap ceph-csi-config -n ceph-system"
+    command = "kubectl --kubeconfig=${self.triggers.kubeconfig_path} delete configmap ceph-csi-config -n ceph-system"
     quiet   = true
   }
 }
 
 resource "helm_release" "talos_ceph_csi_rbd" {
-  count            = local.is_talos_deployment ? 1 : 0
+  count            = local.talos_deploy_ceph_csi ? 1 : 0
   name             = "ceph-csi-rbd"
   repository       = "https://ceph.github.io/csi-charts"
   chart            = "ceph-csi-rbd"
@@ -620,7 +642,7 @@ resource "helm_release" "talos_ceph_csi_rbd" {
 }
 
 resource "helm_release" "talos_ceph_csi_cephfs" {
-  count            = local.is_talos_deployment ? 1 : 0
+  count            = local.talos_deploy_ceph_csi ? 1 : 0
   name             = "ceph-csi-cephfs"
   repository       = "https://ceph.github.io/csi-charts"
   chart            = "ceph-csi-cephfs"
@@ -646,7 +668,7 @@ resource "helm_release" "talos_ceph_csi_cephfs" {
 }
 
 resource "null_resource" "talos_verify_ceph_csi" {
-  count      = local.is_talos_deployment ? 1 : 0
+  count      = local.talos_deploy_ceph_csi ? 1 : 0
   depends_on = [helm_release.talos_ceph_csi_rbd, helm_release.talos_ceph_csi_cephfs]
 
   provisioner "local-exec" {
@@ -654,7 +676,7 @@ resource "null_resource" "talos_verify_ceph_csi" {
       echo '⏳ Validating Ceph CSI deployment status...'
       
       # Define KUBECONFIG for clarity
-      export KUBECONFIG=./build/talos/k8s_config.yaml
+      export KUBECONFIG=./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml
 
       # Wait for resources to be ready
       kubectl rollout status daemonset/ceph-csi-rbd-nodeplugin -n ceph-system --timeout=720s
@@ -663,6 +685,91 @@ resource "null_resource" "talos_verify_ceph_csi" {
       kubectl rollout status deployment/ceph-csi-cephfs-provisioner -n ceph-system --timeout=720s
 
       echo '✅ Ceph CSI is fully Running & Ready.'
+      sleep 10
+    EOT
+    quiet = true
+  }
+}
+
+resource "null_resource" "talos_nfs_csi_requisites" {
+
+  count      = local.talos_deploy_nfs_csi ? 1 : 0
+  depends_on = [null_resource.talos_cilium_gateway_setup]
+
+  provisioner "local-exec" {
+    command = nonsensitive(<<-EOF
+      set -e
+      echo '📦 Deploying NFS CSI into Talos kubernetes cluster...'
+
+      # Pre-load images to all nodes before deployment
+      echo "🚀 Pre-loading NFS CSI (v${var.nfs_csi_version}) images on Talos worker nodes..."
+      talosctl --talosconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/talosconfig image pull registry.k8s.io/sig-storage/nfsplugin:v${var.nfs_csi_version} --nodes ${local.talos_workers_nodes_ips} --namespace cri
+      echo '✅ Images pre-loaded.'
+      sleep 5
+
+      echo '📦 Creating namespace nfs-system...'
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml create namespace nfs-system --dry-run=client -o yaml | kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f -
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml label namespace nfs-system pod-security.kubernetes.io/enforce=privileged --overwrite
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml label namespace nfs-system pod-security.kubernetes.io/audit=privileged --overwrite
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml label namespace nfs-system pod-security.kubernetes.io/warn=privileged --overwrite
+
+      sleep 10
+
+      echo '📦 Deploying NFS CSI StorageClass...'
+      cat <<-'EOT' > "./build/talos/${var.environment}/${var.k8s_cluster_name}/rendered_nfs_config.yaml"
+      ${local.talos_nfs_csi_requisites_rendered_yaml}
+      EOT
+      kubectl --kubeconfig ./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml apply -f "./build/talos/${var.environment}/${var.k8s_cluster_name}/rendered_nfs_config.yaml"
+      sleep 5
+      rm -f "./build/talos/${var.environment}/${var.k8s_cluster_name}/rendered_nfs_config.yaml"
+      echo '✅ NFS CSI StorageClass successfully deployed.'
+      sleep 15
+    EOF
+    )
+    quiet = true
+  }
+}
+
+resource "helm_release" "talos_nfs_csi" {
+  count            = local.talos_deploy_nfs_csi ? 1 : 0
+  name             = "csi-driver-nfs"
+  repository       = "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts"
+  chart            = "csi-driver-nfs"
+  version          = var.nfs_csi_version
+  namespace        = "nfs-system"
+  create_namespace = true
+
+  atomic          = true
+  cleanup_on_fail = true
+
+  values = [
+    templatefile(
+      "${path.module}/templates/talos/nfs-csi-helm-values.yaml.tftpl",
+      { replica_count = local.talos_nfs_csi_replica_count }
+    )
+  ]
+
+  depends_on = [
+    null_resource.talos_nfs_csi_requisites
+  ]
+}
+
+resource "null_resource" "talos_verify_nfs_csi" {
+  count      = local.talos_deploy_nfs_csi ? 1 : 0
+  depends_on = [helm_release.talos_nfs_csi]
+
+  provisioner "local-exec" {
+    command = <<EOT
+      echo '⏳ Validating NFS CSI deployment status...'
+
+      # Define KUBECONFIG for clarity
+      export KUBECONFIG=./build/talos/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml
+
+      # Wait for resources to be ready
+      kubectl rollout status daemonset/csi-nfs-node -n nfs-system --timeout=720s
+      kubectl rollout status deployment/csi-nfs-controller -n nfs-system --timeout=720s
+
+      echo '✅ NFS CSI is fully Running & Ready.'
       sleep 10
     EOT
     quiet = true

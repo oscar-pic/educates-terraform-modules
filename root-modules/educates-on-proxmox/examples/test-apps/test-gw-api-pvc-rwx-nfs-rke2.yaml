@@ -1,0 +1,139 @@
+# ConfigMap to hold the index.html content
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-content-rwx-nfs
+data:
+  index.html: |
+    <h1>Everything is working!</h1>
+    <p>This file was automatically deployed via ConfigMap and InitContainer.</p>
+---
+# ConfigMap for Nginx configuration (using non-privileged settings)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config-rwx-nfs
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+    }
+---
+# PersistentVolumeClaim for dynamic storage provisioning
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-pvc-rwx-nfs
+spec:
+  accessModes: [ReadWriteMany]
+  resources:
+    requests: {storage: 100Mi}
+  storageClassName: proxmox-nfs
+---
+# Deployment with InitContainer to seed the volume
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-app-rwx-nfs
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: test-web-rwx-nfs}
+  template:
+    metadata:
+      labels: {app: test-web-rwx-nfs}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      # InitContainer copies the index.html from the ConfigMap into the PVC
+      # Using 'alpine' as a neutral image to avoid permission issues
+      initContainers:
+      - name: setup-data
+        image: alpine:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        command: ['sh', '-c', 'cp /tmp/index.html /usr/share/nginx/html/index.html']
+        volumeMounts:
+        - name: html-source
+          mountPath: /tmp
+        - name: data
+          mountPath: /usr/share/nginx/html
+      containers:
+      - name: nginx
+        # Using unprivileged image to comply with restricted security standards
+        image: nginxinc/nginx-unprivileged:alpine
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 101
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/nginx/html
+        - name: config-vol
+          mountPath: /etc/nginx/conf.d/
+      volumes:
+      - name: html-source
+        configMap:
+          name: web-content-rwx-nfs
+      - name: data
+        persistentVolumeClaim:
+          claimName: test-pvc-rwx-nfs
+      - name: config-vol
+        configMap:
+          name: nginx-config-rwx-nfs
+---
+# Service to expose the pod internally
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-svc-rwx-nfs
+spec:
+  selector: {app: test-web-rwx-nfs}
+  ports: [{port: 8080, targetPort: 8080}]
+---
+# HTTPRoute to expose the service via Gateway API (TLS terminated at Gateway)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web-route-rwx-nfs
+  namespace: default
+spec:
+  parentRefs:
+  - name: main-gateway
+    namespace: gateway-system
+    # Specifies the sectionName corresponding to the 443/HTTPS listener
+    sectionName: https
+  hostnames:
+  - "test-api-gw-pvc-rwx-nfs.rke2-apps.lab.inet"
+  rules:
+    - matches:
+      - path:
+          type: PathPrefix
+          value: /
+      backendRefs:
+        - name: test-svc-rwx-nfs
+          # Gateway handles SSL, so traffic is passed to the pod on port 8080
+          port: 8080

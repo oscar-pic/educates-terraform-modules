@@ -1,0 +1,28 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: csi-driver-nfs
+  namespace: kube-system
+spec:
+  chart: csi-driver-nfs
+  repo: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+  version: ${nfs_csi_version}
+  targetNamespace: nfs-system
+  createNamespace: true
+  timeout: 15m0s
+  valuesContent: |
+    storageClass:
+      create: false
+    controller:
+      replicas: ${replica_count}
+      nodeSelector:
+        role: "worker"
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+    node:
+      nodeSelector:
+        role: "worker"
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule

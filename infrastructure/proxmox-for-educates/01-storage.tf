@@ -98,13 +98,13 @@ resource "null_resource" "talos_prepare_clean_config" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      mkdir -p "${path.root}/build/talos/nodeconf/original"
-      mkdir -p "${path.root}/build/talos/nodeconf/clean"
+      mkdir -p "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/original"
+      mkdir -p "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/clean"
       
-      echo "${data.talos_machine_configuration.talos_config[each.key].machine_configuration}" > "${path.root}/build/talos/nodeconf/original/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
+      echo "${data.talos_machine_configuration.talos_config[each.key].machine_configuration}" > "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/original/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
       
       echo "${data.talos_machine_configuration.talos_config[each.key].machine_configuration}" | \
-      yq 'select(.kind != "HostnameConfig")' > "${path.root}/build/talos/nodeconf/clean/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
+      yq 'select(.kind != "HostnameConfig")' > "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/clean/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
     EOT
     quiet = true
   }
@@ -131,7 +131,7 @@ resource "null_resource" "talos_create_config_iso" {
   }
 
   provisioner "file" {
-    source      = "${path.root}/build/talos/nodeconf/clean/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
+    source      = "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/clean/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
     destination = "/tmp/user-data-${each.key}"
   }
 
