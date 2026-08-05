@@ -246,6 +246,7 @@ resource "null_resource" "rename_kubeconfig_context_k3s" {
         .contexts[0].name = "admin@${var.k8s_cluster_name}" |
         .contexts[0].context.cluster = "${var.k8s_cluster_name}" |
         .contexts[0].context.user = "admin@${var.k8s_cluster_name}" |
+        .contexts[0].context.namespace = "default" |
         .current-context = "admin@${var.k8s_cluster_name}"
       ' "${local_file.save_kubeconfig_k3s[each.key].filename}"
     EOT
