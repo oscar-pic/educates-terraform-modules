@@ -1,9 +1,9 @@
 variable "deployment_flavor" {
   type        = string
-  description = "The type of deployment: 'k3s-single-node', 'rke2-cluster', or 'talos-cluster'"
+  description = "The type of deployment: 'k3s', 'rke2', or 'talos'"
   validation {
-    condition     = contains(["k3s-single-node", "rke2-cluster", "talos-cluster"], var.deployment_flavor)
-    error_message = "Flavor must be one of: k3s-single-node, rke2-cluster, talos-cluster."
+    condition     = contains(["k3s", "rke2", "talos"], var.deployment_flavor)
+    error_message = "Flavor must be one of: k3s, rke2, talos."
   }
 }
 
@@ -27,7 +27,7 @@ variable "proxmox_nodes" {
 }
 
 variable "k8s_storage_backend" {
-  description = "CSI storage backend(s) to install for the K8s PVCs. Options: 'ceph' (RBD+CephFS), 'nfs', or 'both'. Not used by k3s-single-node."
+  description = "CSI storage backend(s) to install for the K8s PVCs. Options: 'ceph' (RBD+CephFS), 'nfs', or 'both'. Not used by k3s."
   type        = string
   default     = "ceph"
 
@@ -42,7 +42,7 @@ variable "proxmox_nodes_ceph_IPs" {
   default = []
 
   validation {
-    condition     = var.deployment_flavor == "k3s-single-node" || !contains(["ceph", "both"], var.k8s_storage_backend) || length(var.proxmox_nodes_ceph_IPs) > 0
+    condition     = var.deployment_flavor == "k3s" || !contains(["ceph", "both"], var.k8s_storage_backend) || length(var.proxmox_nodes_ceph_IPs) > 0
     error_message = "proxmox_nodes_ceph_IPs must list at least one Ceph monitor IP when k8s_storage_backend is 'ceph' or 'both'."
   }
 }
@@ -70,7 +70,7 @@ variable "proxmox_ceph_k8s_key" {
   default     = ""
 
   validation {
-    condition     = var.deployment_flavor == "k3s-single-node" || !contains(["ceph", "both"], var.k8s_storage_backend) || var.proxmox_ceph_k8s_key != ""
+    condition     = var.deployment_flavor == "k3s" || !contains(["ceph", "both"], var.k8s_storage_backend) || var.proxmox_ceph_k8s_key != ""
     error_message = "proxmox_ceph_k8s_key must be set when k8s_storage_backend is 'ceph' or 'both'."
   }
 }
@@ -87,7 +87,7 @@ variable "nfs_csi_server_address" {
   default     = ""
 
   validation {
-    condition     = var.deployment_flavor == "k3s-single-node" || !contains(["nfs", "both"], var.k8s_storage_backend) || var.nfs_csi_server_address != ""
+    condition     = var.deployment_flavor == "k3s" || !contains(["nfs", "both"], var.k8s_storage_backend) || var.nfs_csi_server_address != ""
     error_message = "nfs_csi_server_address must be set when k8s_storage_backend is 'nfs' or 'both'."
   }
 }
@@ -98,7 +98,7 @@ variable "nfs_csi_share_path" {
   default     = "/"
 
   validation {
-    condition     = var.deployment_flavor == "k3s-single-node" || !contains(["nfs", "both"], var.k8s_storage_backend) || var.nfs_csi_share_path != ""
+    condition     = var.deployment_flavor == "k3s" || !contains(["nfs", "both"], var.k8s_storage_backend) || var.nfs_csi_share_path != ""
     error_message = "nfs_csi_share_path must be set when k8s_storage_backend is 'nfs' or 'both'."
   }
 }
@@ -189,8 +189,8 @@ variable "proxmox_vms_datastore" {
     shared = bool
   })
   validation {
-    # If flavor is NOT k3s-single-node, shared MUST be true.
-    condition     = var.deployment_flavor == "k3s-single-node" || var.proxmox_vms_datastore.shared == true
+    # If flavor is NOT k3s, shared MUST be true.
+    condition     = var.deployment_flavor == "k3s" || var.proxmox_vms_datastore.shared == true
     error_message = "CRITICAL: For cluster deployments, the VM datastore MUST be shared (NFS/Ceph) to ensure HA and data persistence across nodes."
   }
 }
@@ -318,17 +318,17 @@ variable "kube_nodes" {
 resource "null_resource" "validate_rke2_ha_requirements" {
   # This lifecycle precondition enforces deployment standards before touching Proxmox.
   # It evaluates cluster node topology against the presence of an API Virtual IP.
-  count = var.deployment_flavor == "rke2-cluster" ? 1 : 0
+  count = var.deployment_flavor == "rke2" ? 1 : 0
   lifecycle {
     precondition {
       condition = !(
-        var.deployment_flavor == "rke2-cluster" && 
+        var.deployment_flavor == "rke2" && 
         length([for k, v in var.kube_nodes : k if v.type == "rke2-server" || v.type == "rke2-server-bootstrap"]) > 1 && 
         var.k8s_api_endpoint_vip == ""
       )
       error_message = <<EOF
 CRITICAL ARCHITECTURE ERROR:
-The deployment flavor is set to 'rke2-cluster' with multiple Control Plane (master) nodes,
+The deployment flavor is set to 'rke2' with multiple Control Plane (master) nodes,
 but the 'k8s_api_endpoint_vip' variable is empty.
 
 To guarantee High Availability (HA) and allow downstream joiner nodes to register 

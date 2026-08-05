@@ -1,7 +1,7 @@
 locals {
   # Calculamos el path de forma centralizada
   target_paths = {
-    for node in (var.deployment_flavor == "talos-cluster" ? (
+    for node in (var.deployment_flavor == "talos" ? (
       var.proxmox_images_snippets_datastore.shared ? [var.proxmox_nodes[0]] : var.proxmox_nodes
     ) : []) : node => "${var.proxmox_images_snippets_datastore.shared ? "/mnt/pve/${var.proxmox_images_snippets_datastore.name}" : "/var/lib/vz"}/template/iso/talos-${var.talos_compiled_version}-nocloud-amd64.img"
   }
@@ -23,11 +23,11 @@ resource "proxmox_download_file" "os_image" {
   # 🔀 HYBRID URL EVALUATION
   # If flavor is Talos, fetch from factory data source. Otherwise, fall back to your var.cloud_image_url.
   # Added [0] because the data source uses a conditional count block
-  url = var.deployment_flavor == "talos-cluster" ? data.talos_image_factory_urls.talos_iso_schematic[0].urls.disk_image : var.cloud_image_url
+  url = var.deployment_flavor == "talos" ? data.talos_image_factory_urls.talos_iso_schematic[0].urls.disk_image : var.cloud_image_url
     
   # 🔀 HYBRID FILENAME EVALUATION
   # If flavor is Talos, build the filename with local version. Otherwise, use var.proxmox_image_filename.
-  file_name = var.deployment_flavor == "talos-cluster" ? "talos-${var.talos_compiled_version}-nocloud-amd64.raw.xz.img" : "${split("-", var.deployment_flavor)[0]}-${var.proxmox_image_filename}"
+  file_name = var.deployment_flavor == "talos" ? "talos-${var.talos_compiled_version}-nocloud-amd64.raw.xz.img" : "${var.deployment_flavor}-${var.proxmox_image_filename}"
     
 # This prevents the error if the file is already there
   overwrite = false 
@@ -42,7 +42,7 @@ resource "proxmox_download_file" "os_image" {
 }
 
 resource "null_resource" "talos_decompress_image" {
-  for_each = var.deployment_flavor == "talos-cluster" ? (
+  for_each = var.deployment_flavor == "talos" ? (
     var.proxmox_images_snippets_datastore.shared ? toset([var.proxmox_nodes[0]]) : toset(var.proxmox_nodes)
   ) : []
 
@@ -90,7 +90,7 @@ resource "null_resource" "talos_decompress_image" {
 }
 
 resource "null_resource" "talos_prepare_clean_config" {
-  for_each = var.deployment_flavor == "talos-cluster" ? var.kube_nodes : {}
+  for_each = var.deployment_flavor == "talos" ? var.kube_nodes : {}
   
   triggers = {
     config = data.talos_machine_configuration.talos_config[each.key].machine_configuration
@@ -98,20 +98,20 @@ resource "null_resource" "talos_prepare_clean_config" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      mkdir -p "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/original"
-      mkdir -p "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/clean"
+      mkdir -p "${path.root}/build/${var.environment}/${var.k8s_cluster_name}/nodeconf/original"
+      mkdir -p "${path.root}/build/${var.environment}/${var.k8s_cluster_name}/nodeconf/clean"
       
-      echo "${data.talos_machine_configuration.talos_config[each.key].machine_configuration}" > "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/original/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
+      echo "${data.talos_machine_configuration.talos_config[each.key].machine_configuration}" > "${path.root}/build/${var.environment}/${var.k8s_cluster_name}/nodeconf/original/${var.deployment_flavor}-${each.key}.yaml"
       
       echo "${data.talos_machine_configuration.talos_config[each.key].machine_configuration}" | \
-      yq 'select(.kind != "HostnameConfig")' > "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/clean/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
+      yq 'select(.kind != "HostnameConfig")' > "${path.root}/build/${var.environment}/${var.k8s_cluster_name}/nodeconf/clean/${var.deployment_flavor}-${each.key}.yaml"
     EOT
     quiet = true
   }
 }
 
 resource "null_resource" "talos_create_config_iso" {
-  for_each = var.deployment_flavor == "talos-cluster" ? var.kube_nodes : {}
+  for_each = var.deployment_flavor == "talos" ? var.kube_nodes : {}
 
   # Aseguramos que la configuración limpia existe antes de crear el ISO
   depends_on = [
@@ -131,7 +131,7 @@ resource "null_resource" "talos_create_config_iso" {
   }
 
   provisioner "file" {
-    source      = "${path.root}/build/talos/${var.environment}/${var.k8s_cluster_name}/nodeconf/clean/${split("-", var.deployment_flavor)[0]}-${each.key}.yaml"
+    source      = "${path.root}/build/${var.environment}/${var.k8s_cluster_name}/nodeconf/clean/${var.deployment_flavor}-${each.key}.yaml"
     destination = "/tmp/user-data-${each.key}"
   }
 
@@ -198,8 +198,8 @@ resource "null_resource" "cleanup_node_isos" {
 
 resource "proxmox_virtual_environment_file" "ubuntu_flavor_config" {
   # Logic: If flavor is Talos, we create 0 snippets.
-  # If it's k3s-single-node, we create snippets for the nodes.
-  for_each = contains(["k3s-single-node", "rke2-cluster"], var.deployment_flavor) ? var.kube_nodes : {}
+  # If it's k3s, we create snippets for the nodes.
+  for_each = contains(["k3s", "rke2"], var.deployment_flavor) ? var.kube_nodes : {}
   content_type = "snippets"
   # It's recommended to use a shared NFS datastore for snippets, if not, SSH connection will be used to upload the file to the specific node.
   # If you want to avoid SSH, use a shared datastore and comment out the ssh block in the provider configuration.

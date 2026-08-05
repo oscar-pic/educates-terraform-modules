@@ -21,7 +21,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
   ]
   
   agent { 
-    #enabled = var.deployment_flavor == "talos-cluster" ? false : true
+    #enabled = var.deployment_flavor == "talos" ? false : true
     enabled = true
     trim    = true
     timeout = "15m"
@@ -38,14 +38,14 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
     # but requires identical CPUs in the cluster.
     # 🚀 CRITICAL UPDATE A: Force CPU type to 'host' for Talos as requested by documentation
     #type  = "x86-64-v2-AES" 
-    #type = var.deployment_flavor == "talos-cluster" ? "host" : "x86-64-v2-AES"
+    #type = var.deployment_flavor == "talos" ? "host" : "x86-64-v2-AES"
     type = "host"
   }
 
   memory { 
     dedicated = each.value.vm_memory 
     # 🚀 CRITICAL UPDATE B: Memory Ballooning settings for Talos stability
-    #floating  = var.deployment_flavor == "talos-cluster" ? 0 : each.value.vm_memory
+    #floating  = var.deployment_flavor == "talos" ? 0 : each.value.vm_memory
     floating = 0
   }
 
@@ -55,18 +55,18 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
 
   # 🔀 Hybrid Evaluation of Chipset and BIOS
   # If it's Talos, use q35 and ovmf (UEFI), otherwise maintain i440fx and SeaBIOS (default)
-  machine = var.deployment_flavor == "talos-cluster" ? "q35" : null
-  bios    = var.deployment_flavor == "talos-cluster" ? "ovmf" : null
+  machine = var.deployment_flavor == "talos" ? "q35" : null
+  bios    = var.deployment_flavor == "talos" ? "ovmf" : null
 
   # 🔀 BOOT ORDER (The one you already had configured)
   # Talos boots from ISO (ide2) first to install, then from disk (scsi0).
   # Ubuntu boots directly from its pre-provisioned cloud image disk (scsi0).
-  boot_order = var.deployment_flavor == "talos-cluster" ? ["scsi0", "ide2"] : ["scsi0"]
+  boot_order = var.deployment_flavor == "talos" ? ["scsi0", "ide2"] : ["scsi0"]
 
   # 🔀 Dynamic Injection of the EFI Disk
   # Only the efi_disk structure is generated if we are deploying a Talos cluster
   dynamic "efi_disk" {
-    for_each = var.deployment_flavor == "talos-cluster" ? [1] : []
+    for_each = var.deployment_flavor == "talos" ? [1] : []
     content {
       datastore_id = var.proxmox_vms_datastore.name
       file_format  = "raw"
@@ -76,22 +76,22 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
 
   # 🔀 Recommended SCSI controller for Talos
   # We apply the same criterio to avoid the 'single' mode (virtio-scsi-single) that causes issues during Talos bootstrap
-  #scsi_hardware = var.deployment_flavor == "talos-cluster" ? "virtio-scsi-pci" : "virtio-scsi-single"
+  #scsi_hardware = var.deployment_flavor == "talos" ? "virtio-scsi-pci" : "virtio-scsi-single"
   scsi_hardware = "virtio-scsi-single"
 
   disk {
     datastore_id = var.proxmox_vms_datastore.name
-    file_format  = var.deployment_flavor == "talos-cluster" ? "raw" : null
+    file_format  = var.deployment_flavor == "talos" ? "raw" : null
     size         = each.value.vm_disk_size
-    #iothread     = var.deployment_flavor == "talos-cluster" ? false : true
+    #iothread     = var.deployment_flavor == "talos" ? false : true
     iothread     = true
     discard      = "on"
 
     # Dynamic interface assignment: Talos requires standard scsi0. Ubuntu maintains virtio0.
-    #interface    = var.deployment_flavor == "talos-cluster" ? "scsi0" : "virtio0"
+    #interface    = var.deployment_flavor == "talos" ? "scsi0" : "virtio0"
     interface    = "scsi0"
 
-    file_id = var.deployment_flavor == "talos-cluster" ? (
+    file_id = var.deployment_flavor == "talos" ? (
       var.proxmox_images_snippets_datastore.shared ? (
         # If SHARED, only the datastore name (the cluster knows the rest)
         "${var.proxmox_images_snippets_datastore.name}:iso/talos-${var.talos_compiled_version}-nocloud-amd64.img"
@@ -108,7 +108,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
   }
 
   dynamic "cdrom" {
-    for_each = var.deployment_flavor == "talos-cluster" ? [1] : []
+    for_each = var.deployment_flavor == "talos" ? [1] : []
     content {
       interface    = "ide2"
       # We use the path where the null_resource creates the ISO
@@ -134,23 +134,23 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
 
   # --- CONDITIONAL CLOUD-INIT ISOLATION GUARD FOR UBUNTU ---
   dynamic "initialization" {
-    for_each = var.deployment_flavor != "talos-cluster" ? [1] : []
+    for_each = var.deployment_flavor != "talos" ? [1] : []
     #for_each = [1]
     content {
       datastore_id        = var.proxmox_vms_datastore.name
       interface           = "scsi1"
-      #interface = var.deployment_flavor != "talos-cluster" ? "scsi1" : null
+      #interface = var.deployment_flavor != "talos" ? "scsi1" : null
       upgrade             = true
-      #upgrade   = var.deployment_flavor != "talos-cluster" ? true : null
+      #upgrade   = var.deployment_flavor != "talos" ? true : null
 
       # Always use the flavor-aware snippet for Ubuntu/Debian nodes
       # (Unless it's Talos, which you'd handle at the resource/dynamic block level)
       vendor_data_file_id = proxmox_virtual_environment_file.ubuntu_flavor_config[each.key].id
-      #vendor_data_file_id = var.deployment_flavor != "talos-cluster" ? proxmox_virtual_environment_file.ubuntu_flavor_config[each.key].id : null
+      #vendor_data_file_id = var.deployment_flavor != "talos" ? proxmox_virtual_environment_file.ubuntu_flavor_config[each.key].id : null
 
       # Keep user_data NULL to protect your SSH keys!
       #user_data_file_id   = null
-      user_data_file_id   = var.deployment_flavor == "talos-cluster" ? data.talos_machine_configuration.talos_config[each.key].id : null
+      user_data_file_id   = var.deployment_flavor == "talos" ? data.talos_machine_configuration.talos_config[each.key].id : null
 
       ip_config {
         ipv4 {
@@ -165,7 +165,7 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
 
       dynamic "ip_config" {
         for_each = each.value.ceph_ip_address != "" ? [1] : []
-        #for_each = (var.deployment_flavor != "talos-cluster" && each.value.ceph_ip_address != "") ? [1] : []
+        #for_each = (var.deployment_flavor != "talos" && each.value.ceph_ip_address != "") ? [1] : []
         content {
           ipv4 {
             address = "${each.value.ceph_ip_address}"

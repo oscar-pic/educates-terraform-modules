@@ -1,17 +1,17 @@
-deployment_flavor = "talos-cluster"
+deployment_flavor = "talos"
 
 # Connection & Auth
 proxmox_nodes          = ["pve01", "pve02", "pve03"] # Array begins in position 0 
-# Leave next one empty for k3s-single-node; 
+# Leave next one empty for k3s; 
 proxmox_nodes_ceph_IPs = ["10.10.80.20", "10.10.80.21", "10.10.80.22"]
 proxmox_endpoint       = "https://192.168.80.200:8006/"
 proxmox_api_token      = "terraform-user@pve!TF-Token=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
-# Leave all ceph block variables empty for k3s-single-node
+# Leave all ceph block variables empty for k3s
 proxmox_ceph_clusterID = "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxx"
 proxmox_ceph_k8s_key   = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-# CSI storage backend(s) for the K8s PVCs: 'ceph' (RBD+CephFS), 'nfs', or 'both'. Not used by k3s-single-node.
+# CSI storage backend(s) for the K8s PVCs: 'ceph' (RBD+CephFS), 'nfs', or 'both'. Not used by k3s.
 k8s_storage_backend = "ceph"
 
 # Only needed when k8s_storage_backend is 'nfs' or 'both':
@@ -25,7 +25,7 @@ k8s_certs_path                         = "certs"                     # It's only
 k8s_apps_cert_domains                  = ["*.talos-apps.lab.inet"]   # Must be a public domain for use with Let's Encrypt option
 k8s_letsencrypt_email                  = "admin@talos-apps.lab.inet" # Only used with Let's Encrypt option
 k8s_letsencrypt_dns_provider_api_token = ""                          # Cloudflare, route53, google... Only used with Let's Encrypt option
-# Leave Gateway API specific variable empty for k3s-single-node
+# Leave Gateway API specific variable empty for k3s
 k8s_gateway_api_lb_ip_range            = "192.168.80.50/26"
 
 # Storage & Images
@@ -43,7 +43,7 @@ proxmox_vms_datastore    = {
 cloud_image_url        = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 proxmox_image_filename = "ubuntu-24-cloud.img"
 
-# --- Variables for Talos Flavor. Leave empty for k3s-single-node or rke2-cluster ---
+# --- Variables for Talos Flavor. Leave empty for k3s or rke2 ---
 talos_cluster_name     = "talos-proxmox-cluster"
 talos_compiled_version = "v1.13.4"
 talos_compiled_extensions = [
@@ -55,7 +55,7 @@ talos_compiled_extensions = [
 # SSH Path to connect to Proxmox nodes and to inject into the VMs.
 ssh_private_key_path = "~/.ssh/id_ed25519"
 
-# Leave those five empty for k3s-single-node 
+# Leave those five empty for k3s 
 # Fill it only when you move to a multi-node cluster with a VIP, and an interface to configure this VIP.
 k8s_api_endpoint_vip    = "192.168.80.200"
 k8s_api_cp_interface    = "eth0"
@@ -75,7 +75,7 @@ kube_nodes = {
     gateway             = "192.168.80.1" 
     dns_servers         = ["8.8.8.8", "1.1.1.1"]
     network_bridge      = "vmbr0"
-    # Leave Ceph variables empty for k3s-single-node
+    # Leave Ceph variables empty for k3s
     ceph_ip_address     = "10.10.80.201/24"
     ceph_network_bridge = "vmbr1"
     vm_user             = ""

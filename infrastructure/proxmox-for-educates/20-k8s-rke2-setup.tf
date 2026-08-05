@@ -1,6 +1,6 @@
 locals {
   # To Detect choosen flavor
-  is_rke2 = var.deployment_flavor == "rke2-cluster"
+  is_rke2 = var.deployment_flavor == "rke2"
 
   rke2_tls_secret_name = "gateway-api-default-cert"
 
@@ -9,12 +9,12 @@ locals {
   rke2_number_of_nodes = length(var.kube_nodes)
 
   # Filter out which will be the bootstrap node in RKE2 deployment 
-  rke2_bootstrap_node_map = var.deployment_flavor == "rke2-cluster" ? {
+  rke2_bootstrap_node_map = var.deployment_flavor == "rke2" ? {
     for k, v in local.rke2_all_nodes : k => v if v.type == "rke2-server-bootstrap"
   } : {}
 
   # Filter out all the child nodes that need to be joined next on RKE2 deployment
-  rke2_joiner_node_map = var.deployment_flavor == "rke2-cluster" ? {
+  rke2_joiner_node_map = var.deployment_flavor == "rke2" ? {
     for k, v in local.rke2_all_nodes : k => v if v.type == "rke2-server" || v.type == "rke2-agent"
   } : {}
 
@@ -25,13 +25,13 @@ locals {
   ]
 
   # Number of CP on RKE2 deployment
-  rke2_cp_node_map = var.deployment_flavor == "rke2-cluster" ? {
+  rke2_cp_node_map = var.deployment_flavor == "rke2" ? {
     for k, v in local.rke2_all_nodes : k => v if v.type == "rke2-server" || v.type == "rke2-server-bootstrap"
   } : {}
   rke2_number_of_cp = length(local.rke2_cp_node_map)
 
   # Number of workers on RKE2 deployment
-  rke2_worker_node_map = var.deployment_flavor == "rke2-cluster" ? {
+  rke2_worker_node_map = var.deployment_flavor == "rke2" ? {
     for k, v in local.rke2_all_nodes : k => v if v.type == "rke2-agent"
   } : {}
   rke2_has_workers = length(local.rke2_worker_node_map) > 0
@@ -46,7 +46,7 @@ locals {
 
   # 2. "Clean" final variables
   # Now we simply extract from the map based on the current flavor
-  # 🛡️ Using try() avoids evaluation errors when deployment_flavor is "talos-cluster"
+  # 🛡️ Using try() avoids evaluation errors when deployment_flavor is "talos"
   rke2_registration_address          = try(local.rke2_registration_ip, null)
   rke2_kubeconfig_k8s_cluster_api_ip = try(local.rke2_api_ip, null)
 
@@ -274,7 +274,7 @@ resource "local_file" "save_kubeconfig_rke2" {
   for_each = local.rke2_bootstrap_node_map
 
   content  = ssh_resource.k8s_config_rke2[each.key].result
-  filename = "${path.root}/build/${split("-", var.deployment_flavor)[0]}/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
+  filename = "${path.root}/build/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
 }
 
 ###############################################################################

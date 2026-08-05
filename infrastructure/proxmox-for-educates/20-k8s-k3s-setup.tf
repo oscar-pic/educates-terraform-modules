@@ -1,6 +1,6 @@
 locals {
   # To Detect choosen flavor
-  is_k3s  = var.deployment_flavor == "k3s-single-node"
+  is_k3s  = var.deployment_flavor == "k3s"
 
   k3s_tls_secret_name = "traefik-default-cert"
 
@@ -9,7 +9,7 @@ locals {
   k3s_number_of_nodes = length(var.kube_nodes)
 
   # Only will be fulfilled if we are deploying K3S
-  k3s_bootstrap_node_map = var.deployment_flavor == "k3s-single-node" ? {
+  k3s_bootstrap_node_map = var.deployment_flavor == "k3s" ? {
     for k, v in local.k3s_all_nodes : k => v if v.type == "k3s-single-node"
   } : {}
 
@@ -17,7 +17,7 @@ locals {
 
   # 2. "Clean" final variables
   # Now we simply extract from the map based on the current flavor
-  # 🛡️ Using try() avoids evaluation errors when deployment_flavor is "talos-cluster"
+  # 🛡️ Using try() avoids evaluation errors when deployment_flavor is "talos"
   k3s_kubeconfig_k8s_cluster_api_ip = try(local.k3s_api_ip, null)
 }
 
@@ -221,7 +221,7 @@ resource "local_file" "save_kubeconfig_k3s" {
   for_each = local.k3s_bootstrap_node_map
 
   content  = ssh_resource.k8s_config_k3s[each.key].result
-  filename = "${path.root}/build/${split("-", var.deployment_flavor)[0]}/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
+  filename = "${path.root}/build/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
 
 }
 

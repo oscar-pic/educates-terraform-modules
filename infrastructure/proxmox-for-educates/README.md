@@ -17,7 +17,7 @@ Before executing any deployment or teardown operations, your local machine must 
 * **CLI Command Tools**:
   * `kubectl`: To interact with and manage cluster workloads post-deployment.
   * `yq`: Required to handle deep structural YAML configuration updates and template rendering.
-  * `talosctl`: Strictly required if you choose the `talos-cluster` deployment flavor to administer the immutable operating system.
+  * `talosctl`: Strictly required if you choose the `talos` deployment flavor to administer the immutable operating system.
 
 ---
 
@@ -37,7 +37,7 @@ An API Token must be provisioned via `Datacenter -> Permissions -> API Tokens`. 
 The framework provisions a redundant, high-performance dual-stack network architecture:
 
 * **Management & Control Network (`vmbr0`)**: Handles base VM operating system access, internet gateway routing, and the internal Kubernetes API traffic endpoints.
-* **Storage Network (`vmbr1`)**: An isolated network layer dedicated exclusively to high-throughput Ceph cluster inter-node replication and sync. For advanced deployment flavors (`rke2-cluster` and `talos-cluster`), the system expects **MTU 9000 (Jumbo Frames)** configured on this bridge to maximize storage I/O performance.
+* **Storage Network (`vmbr1`)**: An isolated network layer dedicated exclusively to high-throughput Ceph cluster inter-node replication and sync. For advanced deployment flavors (`rke2` and `talos`), the system expects **MTU 9000 (Jumbo Frames)** configured on this bridge to maximize storage I/O performance.
 
 ### C. Storage Backends
 
@@ -59,7 +59,7 @@ Cluster topologies and deployment strategies are managed via variable definition
 
 | Variable | Description | Type / Example |
 | :--- | :--- | :--- |
-| `deployment_flavor` | Target cluster orchestration software. | `'k3s-single-node'`, `'rke2-cluster'`, or `'talos-cluster'` |
+| `deployment_flavor` | Target cluster orchestration software. | `'k3s'`, `'rke2'`, or `'talos'` |
 | `proxmox_endpoint` | The HTTPS secure API endpoint URL of your Proxmox environment. | `[https://192.168.60.34:8006/](https://192.168.60.34:8006/)` |
 | `proxmox_api_token` | Formatted credential token string for secure provider auth. | `user@pve!TokenName=SecretSecret` |
 | `proxmox_nodes` | Ordered array string specifying targeted physical hypervisors. | `["pve-lab-01", "pve-lab-02", "pve-lab-03"]` |
@@ -78,7 +78,7 @@ Cluster topologies and deployment strategies are managed via variable definition
 | :--- | :--- | :--- |
 | `proxmox_images_snippets_datastore` | Storage configuration target mapping for scripts and snippets. | `{"name": "nfs-shared", "shared": true}` |
 | `proxmox_vms_datastore` | Storage configuration target mapping for virtual machine disks. | `{"name": "ceph-shared", "shared": true}` |
-| `k8s_storage_backend` | Which K8s CSI storage backend(s) to install for PVCs. Not used by `k3s-single-node`. | `'ceph'` (default, RBD+CephFS), `'nfs'`, or `'both'` |
+| `k8s_storage_backend` | Which K8s CSI storage backend(s) to install for PVCs. Not used by `k3s`. | `'ceph'` (default, RBD+CephFS), `'nfs'`, or `'both'` |
 | `proxmox_ceph_clusterID` | Unique Ceph Cluster UUID (`FSID`). Required when `k8s_storage_backend` is `ceph`/`both`. | `"80a345ca-6a31-4abb-a443-5b3f5efc41d7"` |
 | `proxmox_ceph_k8s_key` | Base64-encoded authentication key for the `client.kubernetes` user. Required when `k8s_storage_backend` is `ceph`/`both`. | `AQDQOg9q...==` |
 | `nfs_csi_version` | `csi-driver-nfs` Helm chart version. | `"4.13.4"` |
@@ -116,11 +116,11 @@ Cluster topologies and deployment strategies are managed via variable definition
 
 The framework includes hardcoded architectural guardrails built directly into its validation phase via pre-execution lifecycles:
 
-* **High-Availability VIP Check (`validate_rke2_ha_requirements`)**: If `deployment_flavor` is configured to `rke2-cluster` and the `kube_nodes` topology counts more than one Control Plane node (`rke2-server` or `rke2-server-bootstrap`), the system **enforces** that `k8s_api_endpoint_vip` must not be empty.
+* **High-Availability VIP Check (`validate_rke2_ha_requirements`)**: If `deployment_flavor` is configured to `rke2` and the `kube_nodes` topology counts more than one Control Plane node (`rke2-server` or `rke2-server-bootstrap`), the system **enforces** that `k8s_api_endpoint_vip` must not be empty.
 * If the VIP is missing, execution terminates immediately before connecting to Proxmox, outputting a critical deployment error to protect cluster quorum stability:
 
     CRITICAL ARCHITECTURE ERROR:
-    The deployment flavor is set to 'rke2-cluster' with multiple Control Plane nodes,
+    The deployment flavor is set to 'rke2' with multiple Control Plane nodes,
     but the 'k8s_api_endpoint_vip' variable is empty.
 
 ---
@@ -175,54 +175,55 @@ The `kube_nodes` map acts as the complete definitive blueprint for your topology
 To prevent state crossover and handle automated state migrations smoothly, **do not invoke raw Terraform commands directly**. Instead, utilize the custom orchestration scripts designed for your workstation platform.
 
 Both wrappers use Terraform's `local` backend with an explicit `path` computed from
-`build/<flavor>/<environment>/<k8s_cluster_name>/terraform.tfstate` — read straight out of the
-`vars/<flavor>.tfvars` file you're operating on, not from Terraform workspaces (none are used).
-This means state is isolated per cluster, not just per flavor: `talos.tfvars` and, say,
-`talos-on-axlab.tfvars` (different `k8s_cluster_name`) never share state even though both use
-`FLAVOR=talos`.
+`build/<environment>/<k8s_cluster_name>/terraform.tfstate` — read straight out of the tfvars
+file you point at with `TFVARS=<name>`, not from Terraform workspaces (none are used). There's
+no separate flavor parameter either: the flavor itself is read from that same tfvars file's own
+`deployment_flavor` variable, so it can never disagree with what actually gets deployed. This
+means state is isolated per cluster: `talos.tfvars` and, say, `talos-on-axlab.tfvars` (different
+`k8s_cluster_name`) never share state even though both deploy `talos`.
 
 Select the tool corresponding to your operating system platform:
 
 ### Option A: Linux or macOS Systems — Using `Makefile`
 
-All workflow tasks require the explicit invocation of the `FLAVOR` variable flag (`k3s`, `rke2`, or `talos`). An optional `PARALLELISM=n` caps concurrent Terraform operations (e.g. `PARALLELISM=1` to serialize them).
+All workflow tasks require the explicit invocation of the `TFVARS` variable flag (e.g. `TFVARS=talos` for `vars/talos.tfvars`). An optional `PARALLELISM=n` caps concurrent Terraform operations (e.g. `PARALLELISM=1` to serialize them).
 
 #### 1. Analyze and Plan Infrastructure Build
 
-Initializes the backend at the flavor/environment/cluster-scoped path (auto-migrating state if the path just changed), and writes a secured plan output artifact file:
+Initializes the backend at the environment/cluster-scoped path (auto-migrating state if the path just changed), and writes a secured plan output artifact file:
 
-    make plan FLAVOR=talos [PARALLELISM=1]
+    make plan TFVARS=talos [PARALLELISM=1]
 
 #### 2. Execute Infrastructure Rollout (Apply)
 
 Applies the pre-compiled deployment blueprint artifact safely to your Proxmox VE infrastructure.
 *Note: Always use this specific wrapper command instead of standard vanilla terraform commands post-plan to ensure all downstream output variables remain tied to the correct state.*
 
-    make apply FLAVOR=talos [PARALLELISM=1]
+    make apply TFVARS=talos [PARALLELISM=1]
 
 #### 3. Full Infrastructure Teardown (Destroy)
 
 Triggers a safe, un-attended full teardown sequence isolated exclusively to the specified cluster's state:
 
-    make destroy FLAVOR=talos [PARALLELISM=1]
+    make destroy TFVARS=talos [PARALLELISM=1]
 
 ---
 
 ### Option B: Windows Systems — Using `PowerShell Core`
 
-The `deploy.ps1` script implements the same flavor/environment/cluster-scoped state isolation, keeping infrastructure actions completely separated. An optional `-Parallelism n` caps concurrent Terraform operations.
+The `deploy.ps1` script implements the same environment/cluster-scoped state isolation, keeping infrastructure actions completely separated -- same as the Makefile, there's no `-Flavor` parameter either. An optional `-Parallelism n` caps concurrent Terraform operations.
 
 #### 1. Analyze and Plan Infrastructure Build
 
-    .\deploy.ps1 -Flavor talos -Action plan [-Parallelism 1]
+    .\deploy.ps1 -Action plan -TfVars talos [-Parallelism 1]
 
 #### 2. Execute Infrastructure Rollout (Apply)
 
-    .\deploy.ps1 -Flavor talos -Action apply [-Parallelism 1]
+    .\deploy.ps1 -Action apply -TfVars talos [-Parallelism 1]
 
 #### 3. Full Infrastructure Teardown (Destroy)
 
-    .\deploy.ps1 -Flavor talos -Action destroy [-Parallelism 1]
+    .\deploy.ps1 -Action destroy -TfVars talos [-Parallelism 1]
 
 #### CLI Help Dashboard
 
@@ -234,12 +235,12 @@ To query quick-start command examples and parameter options directly in your con
 
 ## 7. Post-Deployment Cluster Connectivity
 
-Once execution reports complete, the wrapper framework automatically handles backend target outputs, formats the admin administrative credentials, and generates a local workspace connectivity file named `k8s_config.yaml` in your "\<root>/build/\<flavor>" folder.
+Once execution reports complete, the wrapper framework automatically handles backend target outputs, formats the admin administrative credentials, and generates a local workspace connectivity file named `k8s_config.yaml` in your "\<root>/build/\<environment>/\<cluster_name>" folder.
 
 Execute the following commands in your local workstation terminal to verify operations:
 
     # 1. Map your terminal session to the newly exported workspace configuration
-    export KUBECONFIG=$(pwd)/build/<flavor>/k8s_config.yaml
+    export KUBECONFIG=$(pwd)/build/<environment>/<cluster_name>/k8s_config.yaml
 
     # 2. Verify all multi-node topology objects report healthy status
     kubectl get nodes -o wide
@@ -251,4 +252,4 @@ Execute the following commands in your local workstation terminal to verify oper
     kubectl get storageclass
 
     # 5. (Talos only) talosctl already defaults to the bootstrap node, no --nodes needed
-    talosctl --talosconfig build/<flavor>/talosconfig get members
+    talosctl --talosconfig build/<environment>/<cluster_name>/talosconfig get members

@@ -7,58 +7,65 @@ BACKENDS_DIR    := backends
 VARS_DIR        := vars
 BUILD_ROOT      := build
 
-# Optional: pick a tfvars file other than vars/<FLAVOR>.tfvars (e.g. TFVARS=talos-on-axlab-test to
-# use vars/talos-on-axlab-test.tfvars instead of the default vars/talos.tfvars). Base name, no extension.
-TFVARS          ?= $(FLAVOR)
+# Required: which tfvars file to use (e.g. TFVARS=talos-on-axlab-test for
+# vars/talos-on-axlab-test.tfvars). Base name, no extension. There's no default and no separate
+# FLAVOR parameter: the flavor is derived below from the tfvars file's own 'deployment_flavor'
+# variable, so there's only one place that can ever disagree with itself.
 VARS_FILE       := $(VARS_DIR)/$(TFVARS).tfvars
 
-ENVIRONMENT     := $(shell grep '^environment' $(VARS_FILE) | cut -d'"' -f2)
-CLUSTER_NAME    := $(shell grep '^k8s_cluster_name' $(VARS_FILE) | cut -d'"' -f2)
+ENVIRONMENT     := $(shell grep '^environment' $(VARS_FILE) 2>/dev/null | cut -d'"' -f2)
+CLUSTER_NAME    := $(shell grep '^k8s_cluster_name' $(VARS_FILE) 2>/dev/null | cut -d'"' -f2)
+FLAVOR          := $(shell grep '^deployment_flavor' $(VARS_FILE) 2>/dev/null | cut -d'"' -f2)
 
 # Optional parallelism parameter (defaults to empty so Terraform uses its internal default, or you can override like PARALLELISM=1)
 PARALLELISM     ?=
 
-# 2. Flavor Validation
+# 2. Validation
 ifeq ($(filter help,$(MAKECMDGOALS)),)
-  ifndef FLAVOR
-    $(error ERROR: FLAVOR is not defined. Use 'make [plan|apply|destroy] FLAVOR=k3s|rke2|talos [PARALLELISM=1]')
+  ifndef TFVARS
+    $(error ERROR: TFVARS is not defined. Use 'make [plan|apply|destroy] TFVARS=<name> [PARALLELISM=1]')
+  endif
+  ifeq ($(wildcard $(VARS_FILE)),)
+    $(error ERROR: $(VARS_FILE) not found.)
   endif
   ifneq ($(filter $(FLAVOR),$(ALLOWED_FLAVORS)),$(FLAVOR))
-    $(error ERROR: FLAVOR must be one of [$(ALLOWED_FLAVORS)].)
+    $(error ERROR: deployment_flavor '$(FLAVOR)' inside $(VARS_FILE) must be one of [$(ALLOWED_FLAVORS)].)
   endif
 endif
 
-# Define artifact directory (scoped by flavor/environment/cluster_name, matching the backend state path)
-ARTIFACT_DIR := $(BUILD_ROOT)/$(FLAVOR)/$(ENVIRONMENT)/$(CLUSTER_NAME)
+# Define artifact directory (scoped by environment/cluster_name, matching the backend state path --
+# flavor isn't part of the path: cluster_name is already globally unique, so it added nothing)
+ARTIFACT_DIR := $(BUILD_ROOT)/$(ENVIRONMENT)/$(CLUSTER_NAME)
 
 # Help command
 help:
 	@echo "Terraform Infrastructure Manager"
-	@echo "Usage: make [COMMAND] FLAVOR=[flavor] [TFVARS=name] [PARALLELISM=n]"
+	@echo "Usage: make [COMMAND] TFVARS=<name> [PARALLELISM=n]"
 	@echo ""
 	@echo "Commands (Terraform wrappers):"
 	@echo "  plan     Initialize Terraform and generate execution plan"
 	@echo "  apply    Apply the previously generated Terraform plan"
 	@echo "  destroy  Destroy the infrastructure managed by Terraform"
 	@echo ""
-	@echo "Flavors:"
+	@echo "Flavors (read from 'deployment_flavor' inside the tfvars file, not a separate parameter):"
 	@echo "  $(ALLOWED_FLAVORS)"
 	@echo ""
 	@echo "Parameters:"
-	@echo "  TFVARS       Use vars/<name>.tfvars instead of vars/<FLAVOR>.tfvars (e.g. TFVARS=talos-on-axlab-test)"
+	@echo "  TFVARS       Required. Use vars/<name>.tfvars (e.g. TFVARS=talos-on-axlab-test)"
 	@echo "  PARALLELISM  Limit concurrent operations (e.g., PARALLELISM=1)"
 	@echo "Example:"
-	@echo "  make apply FLAVOR=talos PARALLELISM=1"
-	@echo "  make plan FLAVOR=talos TFVARS=talos-on-axlab-test"
+	@echo "  make apply TFVARS=talos-on-axlab-test PARALLELISM=1"
+	@echo "  make plan TFVARS=talos-on-axlab-test"
 
 # Ensure build directory exists for artifacts
 $(ARTIFACT_DIR):
 	@mkdir -p $(ARTIFACT_DIR)
 
-# Init: Sets up the backend for this flavor/environment/cluster combination.
+# Init: Sets up the backend for this cluster's state.
 # NOTE: the "local" backend has no "key" attribute (that's an S3-only concept), so state
 # isolation here comes entirely from the "path" override below, one file per
-# flavor/environment/cluster_name — not from Terraform workspaces (none are used).
+# environment/cluster_name (already globally unique on its own) — not from Terraform
+# workspaces (none are used).
 init: $(ARTIFACT_DIR)
 	@echo "--- Initializing backend for $(FLAVOR) ($(ENVIRONMENT)/$(CLUSTER_NAME)) ---"
 
@@ -111,7 +118,7 @@ plan: init
 	@echo "=========================================================="
 	@echo "Plan generated successfully."
 	@echo "To apply this plan, run:"
-	@echo "  make apply FLAVOR=$(FLAVOR)$(if $(filter-out $(FLAVOR),$(TFVARS)), TFVARS=$(TFVARS),)$(if $(PARALLELISM), PARALLELISM=$(PARALLELISM),)"
+	@echo "  make apply TFVARS=$(TFVARS)$(if $(PARALLELISM), PARALLELISM=$(PARALLELISM),)"
 	@echo "=========================================================="
 
 # Apply: Uses the artifact from the build directory

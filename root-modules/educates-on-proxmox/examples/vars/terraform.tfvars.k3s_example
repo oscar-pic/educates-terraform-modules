@@ -1,13 +1,13 @@
-deployment_flavor = "k3s-single-node"
+deployment_flavor = "k3s"
 
 # Connection & Auth
 proxmox_nodes          = ["pve01", "pve02", "pve03"] # Array begins in position 0
-# Leave next one empty for k3s-single-node; 
+# Leave next one empty for k3s; 
 proxmox_nodes_ceph_IPs = []
 proxmox_endpoint       = "https://192.168.80.200:8006/"
 proxmox_api_token      = "terraform-user@pve!TF-Token=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
-# Leave all ceph block variables empty for k3s-single-node
+# Leave all ceph block variables empty for k3s
 proxmox_ceph_clusterID = ""
 proxmox_ceph_k8s_key   = ""
 
@@ -16,7 +16,7 @@ k8s_certs_path                         = "certs".                  # It's only n
 k8s_apps_cert_domains                  = ["*.k3s-apps.lab.inet"]   # Must be a public domain for use with Let's Encrypt option
 k8s_letsencrypt_email                  = "admin@k3s-apps.lab.inet" # Only used with Let's Encrypt option
 k8s_letsencrypt_dns_provider_api_token = ""                        # Cloudflare, route53, google... Only used with Let's Encrypt option
-# Leave Gateway API specific variable empty for k3s-single-node
+# Leave Gateway API specific variable empty for k3s
 k8s_gateway_api_lb_ip_range            = ""
 
 # Storage & Images
@@ -34,7 +34,7 @@ proxmox_vms_datastore    = {
 cloud_image_url        = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 proxmox_image_filename = "ubuntu-24-cloud.img"
 
-# --- Variables for Talos Flavor. Leave empty for k3s-single-node or rke2-cluster ---
+# --- Variables for Talos Flavor. Leave empty for k3s or rke2 ---
 talos_cluster_name     = ""
 talos_compiled_version = ""
 talos_compiled_extensions = []
@@ -42,7 +42,7 @@ talos_compiled_extensions = []
 # SSH Path to connect to Proxmox nodes and to inject into the VMs.
 ssh_private_key_path = "~/.ssh/id_ed25519"
 
-# Leave those five empty for k3s-single-node
+# Leave those five empty for k3s
 # Fill it only when you move to a multi-node cluster with a VIP, and an interface to configure this VIP.
 k8s_api_endpoint_vip    = ""
 k8s_api_cp_interface    = ""
@@ -62,7 +62,7 @@ kube_nodes = {
     gateway             = "192.168.80.1"
     dns_servers         = ["8.8.8.8", "1.1.1.1"]
     network_bridge      = "vmbr0"
-    # Leave Ceph variables empty for k3s-single-node
+    # Leave Ceph variables empty for k3s
     ceph_ip_address     = ""
     ceph_network_bridge = ""
     vm_user             = "ubuntu"
@@ -71,6 +71,6 @@ kube_nodes = {
     vm_cores            = 4
     vm_memory           = 12288
     vm_disk_size        = 60
-    node_labels         = ["flavor=k3s-single-node", "role=all", "os=k3s"]
+    node_labels         = ["flavor=k3s", "role=all", "os=k3s"]
   }
 }
