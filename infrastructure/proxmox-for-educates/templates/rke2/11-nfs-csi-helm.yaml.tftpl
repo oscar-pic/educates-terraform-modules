@@ -17,6 +17,26 @@ spec:
       replicas: ${replica_count}
       nodeSelector:
         role: "worker"
+      # hostNetwork controller pods can't share a node (the liveness-probe sidecar binds a
+      # fixed host port), so each replica MUST land on a different node. The chart only
+      # renders this "affinity" value at all if it contains the literal substring
+      # "nodeSelectorTerms" -- the trivial nodeAffinity below (matching everything, same as
+      # nodeSelector already does) exists purely to satisfy that check so podAntiAffinity
+      # actually gets applied.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values: ["linux"]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: csi-nfs-controller
+              topologyKey: kubernetes.io/hostname
       tolerations:
         - operator: Exists
           effect: NoSchedule
