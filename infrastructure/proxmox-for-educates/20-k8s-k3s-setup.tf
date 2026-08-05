@@ -250,6 +250,7 @@ resource "null_resource" "rename_kubeconfig_context_k3s" {
         .current-context = "admin@${var.k8s_cluster_name}"
       ' "${local_file.save_kubeconfig_k3s[each.key].filename}"
     EOT
+    quiet = true
   }
 }
 
