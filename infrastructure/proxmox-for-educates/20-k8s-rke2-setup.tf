@@ -277,6 +277,33 @@ resource "local_file" "save_kubeconfig_rke2" {
   filename = "${path.root}/build/${var.environment}/${var.k8s_cluster_name}/k8s_config.yaml"
 }
 
+resource "null_resource" "rename_kubeconfig_context_rke2" {
+  for_each = local.rke2_bootstrap_node_map
+
+  depends_on = [local_file.save_kubeconfig_rke2]
+
+  triggers = {
+    vm_id = proxmox_virtual_environment_vm.kube_node[each.key].id
+  }
+
+  # RKE2's own kubeconfig always names its single cluster/context/user "default" -- it has
+  # no notion of k8s_cluster_name. Rename them to the admin@<cluster_name> convention every
+  # other flavor (and the bastion/OpenBao scripts) already assumes, so multiple clusters
+  # stay distinguishable once merged together.
+  provisioner "local-exec" {
+    command = <<-EOT
+      yq -i '
+        .clusters[0].name = "${var.k8s_cluster_name}" |
+        .users[0].name = "admin@${var.k8s_cluster_name}" |
+        .contexts[0].name = "admin@${var.k8s_cluster_name}" |
+        .contexts[0].context.cluster = "${var.k8s_cluster_name}" |
+        .contexts[0].context.user = "admin@${var.k8s_cluster_name}" |
+        .current-context = "admin@${var.k8s_cluster_name}"
+      ' "${local_file.save_kubeconfig_rke2[each.key].filename}"
+    EOT
+  }
+}
+
 ###############################################################################
 # STEP 2: DEPLOY CEPH CSI FOR RKE2
 ###############################################################################

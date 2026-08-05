@@ -225,6 +225,33 @@ resource "local_file" "save_kubeconfig_k3s" {
 
 }
 
+resource "null_resource" "rename_kubeconfig_context_k3s" {
+  for_each = local.k3s_bootstrap_node_map
+
+  depends_on = [local_file.save_kubeconfig_k3s]
+
+  triggers = {
+    vm_id = proxmox_virtual_environment_vm.kube_node[each.key].id
+  }
+
+  # k3s's own kubeconfig always names its single cluster/context/user "default" -- it has
+  # no notion of k8s_cluster_name. Rename them to the admin@<cluster_name> convention every
+  # other flavor (and the bastion/OpenBao scripts) already assumes, so multiple clusters
+  # stay distinguishable once merged together.
+  provisioner "local-exec" {
+    command = <<-EOT
+      yq -i '
+        .clusters[0].name = "${var.k8s_cluster_name}" |
+        .users[0].name = "admin@${var.k8s_cluster_name}" |
+        .contexts[0].name = "admin@${var.k8s_cluster_name}" |
+        .contexts[0].context.cluster = "${var.k8s_cluster_name}" |
+        .contexts[0].context.user = "admin@${var.k8s_cluster_name}" |
+        .current-context = "admin@${var.k8s_cluster_name}"
+      ' "${local_file.save_kubeconfig_k3s[each.key].filename}"
+    EOT
+  }
+}
+
 resource "null_resource" "reboot_k3s_node_needed" {
   for_each = local.k3s_bootstrap_node_map
 
