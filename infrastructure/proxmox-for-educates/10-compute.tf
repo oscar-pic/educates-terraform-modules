@@ -13,6 +13,13 @@ resource "proxmox_virtual_environment_vm" "kube_node" {
 
   lifecycle {
     create_before_destroy = true
+    # The bpg/proxmox provider has a Read/refresh gap for pool_id: Proxmox correctly keeps the
+    # VM in the pool (assigned at create time), but the provider's state never reflects that
+    # back, so every subsequent apply thinks it still needs to (re)assign it and gets a
+    # permanent 500 "VM X is already a pool member" from Proxmox. ignore_changes stops
+    # Terraform from re-asserting it on updates while still setting it correctly on create
+    # (this only suppresses post-create diffs, not the initial value).
+    ignore_changes = [pool_id]
   }
 
   depends_on = [

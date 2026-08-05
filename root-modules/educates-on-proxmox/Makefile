@@ -122,11 +122,27 @@ plan: init
 	@echo "=========================================================="
 
 # Apply: Uses the artifact from the build directory
+# Retries once on failure: the bpg/proxmox provider has a known race when several VMs are
+# added to the same Pool in the same apply (creating a cluster's nodes for the first time, or
+# scaling it) -- one of the concurrent "add to pool" calls can 500 with "VM X is already a pool
+# member" even though the VM itself was created fine and IS in the pool. Terraform still marks
+# that resource's apply as failed, which skips everything downstream of it in the same run
+# (e.g. a CSI replica-count Helm upgrade never runs). The retry re-applies against the tfvars
+# directly (not the saved plan, which may be stale after a partial apply) -- safe, since
+# Terraform apply is idempotent and the first attempt's real resources are already in state.
 apply: init
 	@echo "--- Applying configuration for $(FLAVOR) ---"
 	@terraform apply \
 		$(if $(PARALLELISM),-parallelism=$(PARALLELISM),) \
-		"$(ARTIFACT_DIR)/$(FLAVOR).tfplan"
+		"$(ARTIFACT_DIR)/$(FLAVOR).tfplan" || \
+	( \
+		echo "--- Apply failed, retrying once (known bpg/proxmox Pool-membership race -- see comment above) ---"; \
+		sleep 5; \
+		terraform apply \
+			-auto-approve \
+			-var-file=$(VARS_FILE) \
+			$(if $(PARALLELISM),-parallelism=$(PARALLELISM),) \
+	)
 
 # Destroy: Validated destroy
 destroy: init
