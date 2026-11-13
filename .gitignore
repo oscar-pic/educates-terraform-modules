@@ -47,3 +47,11 @@ terraform.rc
 
 # Ignore environment files
 .envrc
+# macOS
+.DS_Store
+
+# Local secrets and generated artifacts (never commit them)
+**/ssh-keys/
+**/certs/
+**/build/
+**/talosconfig*

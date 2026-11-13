@@ -1,0 +1,76 @@
+# Three Proxmox hosts, three control-plane nodes behind a VIP, three workers,
+# shared storage, Proxmox HA and an optional storage network (e.g. for Ceph).
+#
+#   cp examples/ha.tfvars.example ha.tfvars   # *.tfvars is git-ignored
+#   export TF_VAR_proxmox_api_token='terraform@pve!educates=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+#   export TF_VAR_proxmox_csi_token_secret='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'   # token of kubernetes-csi@pve
+#   export TF_VAR_ceph_csi_user_key="$(ceph auth get-key client.kubernetes)"
+#   tofu init && tofu apply -var-file=ha.tfvars
+
+proxmox_endpoint = "https://pve.example.com:8006/"
+
+cluster_name = "educates"
+
+proxmox = {
+  region                 = "pve-cluster"
+  vm_datastore           = "ceph-vms" # shared, so HA can move VMs
+  image_datastore        = "cephfs"   # shared, must allow the 'import' content type
+  image_datastore_shared = true
+  ha_enabled             = true
+}
+
+talos = {
+  version            = "v1.14.6"
+  config_contract    = "v1.14" # keep it fixed after the first apply
+  kubernetes_version = "1.36.6"
+}
+
+network = {
+  cidr        = "192.168.10.0/24"
+  gateway     = "192.168.10.1"
+  dns_servers = ["192.168.10.1"]
+  api_vip     = "192.168.10.20"
+}
+
+storage_network = {
+  cidr   = "10.10.10.0/24"
+  bridge = "vmbr1"
+}
+
+gateway_api = {
+  enabled = true
+}
+
+load_balancer = {
+  ip_pools = ["192.168.10.240/28"]
+}
+
+# RWO volumes as Proxmox disks on the Ceph RBD datastore (default class),
+# RWX volumes from Proxmox's CephFS through the storage network.
+storage = {
+  default_class = "proxmox-ceph"
+  proxmox_csi = {
+    enabled  = true
+    token_id = "kubernetes-csi@pve!csi"
+    storage_classes = [
+      { name = "proxmox-ceph", datastore = "ceph-vms" },
+    ]
+  }
+  ceph_csi = {
+    enabled    = true
+    cluster_id = "00000000-0000-0000-0000-000000000000" # ceph fsid
+    monitors   = ["10.10.10.1:6789", "10.10.10.2:6789", "10.10.10.3:6789"]
+    user_id    = "kubernetes"
+    rbd        = { enabled = false }
+    cephfs     = { enabled = true, fs_name = "cephfs" }
+  }
+}
+
+nodes = {
+  cp-01     = { role = "controlplane", proxmox_node = "pve1", ip = "192.168.10.21", storage_ip = "10.10.10.21" }
+  cp-02     = { role = "controlplane", proxmox_node = "pve2", ip = "192.168.10.22", storage_ip = "10.10.10.22" }
+  cp-03     = { role = "controlplane", proxmox_node = "pve3", ip = "192.168.10.23", storage_ip = "10.10.10.23" }
+  worker-01 = { role = "worker", proxmox_node = "pve1", ip = "192.168.10.31", storage_ip = "10.10.10.31", cpu = 8, memory = 32768, disk_size = 100 }
+  worker-02 = { role = "worker", proxmox_node = "pve2", ip = "192.168.10.32", storage_ip = "10.10.10.32", cpu = 8, memory = 32768, disk_size = 100 }
+  worker-03 = { role = "worker", proxmox_node = "pve3", ip = "192.168.10.33", storage_ip = "10.10.10.33", cpu = 8, memory = 32768, disk_size = 100 }
+}

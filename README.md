@@ -9,6 +9,7 @@ These are not versioned.
 
 - [gke](./root-modules/educates-on-gke/)
 - [eks](./root-modules/educates-on-eks/)
+- [proxmox](./root-modules/educates-on-proxmox/) (Talos Linux on Proxmox VE, work in progress)
 
 ## Configuration examples
 

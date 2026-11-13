@@ -1,0 +1,50 @@
+# Evaluation and labs: one Proxmox host with local storage, one Talos node that is
+# control plane and worker at the same time. Good for trying Educates out.
+#
+#   cp examples/single-host.tfvars.example single-host.tfvars   # *.tfvars is git-ignored
+#   export TF_VAR_proxmox_api_token='terraform@pve!educates=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+#   export TF_VAR_proxmox_csi_token_secret='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'   # token of kubernetes-csi@pve
+#   tofu init && tofu apply -var-file=single-host.tfvars
+
+proxmox_endpoint = "https://pve.example.com:8006/"
+proxmox_insecure = true # self-signed Proxmox certificate
+
+cluster_name = "educates"
+
+proxmox = {
+  vm_datastore    = "local-lvm"
+  image_datastore = "local" # must allow the 'import' content type
+}
+
+network = {
+  cidr    = "192.168.10.0/24"
+  gateway = "192.168.10.1"
+}
+
+nodes = {
+  cp-01 = {
+    role         = "controlplane"
+    proxmox_node = "pve"
+    ip           = "192.168.10.21"
+    cpu          = 8
+    memory       = 32768
+    disk_size    = 100
+  }
+}
+
+# Free IPs in the node network for LoadBalancer Services (the Educates ingress).
+load_balancer = {
+  ip_pools = ["192.168.10.240-192.168.10.249"]
+}
+
+# Volumes as Proxmox disks on local-lvm.
+storage = {
+  default_class = "proxmox-local"
+  proxmox_csi = {
+    enabled  = true
+    token_id = "kubernetes-csi@pve!csi"
+    storage_classes = [
+      { name = "proxmox-local", datastore = "local-lvm" },
+    ]
+  }
+}

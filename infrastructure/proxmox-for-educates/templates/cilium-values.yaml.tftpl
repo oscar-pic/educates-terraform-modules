@@ -1,0 +1,43 @@
+# Cilium values for Talos (https://docs.siderolabs.com/kubernetes-guides/cni/deploying-cilium).
+ipam:
+  mode: kubernetes
+
+# No kube-proxy; reach the API through KubePrism (local load balancer on every
+# node) instead of a single control-plane IP.
+kubeProxyReplacement: true
+k8sServiceHost: localhost
+k8sServicePort: 7445
+
+# Talos mounts cgroups itself and does not allow SYS_MODULE.
+cgroup:
+  autoMount:
+    enabled: false
+  hostRoot: /sys/fs/cgroup
+securityContext:
+  capabilities:
+    ciliumAgent: [CHOWN, KILL, NET_ADMIN, NET_RAW, IPC_LOCK, SYS_ADMIN, SYS_RESOURCE, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    cleanCiliumState: [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE]
+
+# Device detection stays on (no "devices:"), so BPF masquerading also covers a
+# second NIC such as a storage network (lesson 3).
+
+operator:
+  replicas: ${operator_replicas}
+
+# LoadBalancer IPs announced with ARP on the node network. The IP pool and the
+# announcement policy are cluster resources created after bootstrap.
+l2announcements:
+  enabled: true
+k8sClientRateLimit:
+  qps: 50
+  burst: 100
+
+gatewayAPI:
+  enabled: ${gateway_api_enabled}
+
+hubble:
+  enabled: ${hubble_enabled}
+  relay:
+    enabled: ${hubble_enabled}
+  ui:
+    enabled: false
