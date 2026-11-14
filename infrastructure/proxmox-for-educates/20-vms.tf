@@ -60,6 +60,7 @@ resource "proxmox_virtual_environment_vm" "node" {
   network_device {
     bridge      = var.network.bridge
     vlan_id     = var.network.vlan_id
+    mtu         = var.network.mtu
     mac_address = each.value.mac_address
     model       = "virtio"
   }

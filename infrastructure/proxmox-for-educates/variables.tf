@@ -66,6 +66,8 @@ variable "network" {
     - api_vip: free IP in that subnet, shared by the control-plane nodes for the Kubernetes API.
       Required with more than one control-plane node.
     - interface: name of the NIC inside Talos (eth0 for the first virtio NIC).
+    - mtu: MTU of the VM NIC. 1 inherits the bridge MTU: use it on SDN VXLAN/EVPN VNets (MTU 1450 by
+      default), or the nodes send packets the VNet drops. Unset: the Proxmox default (1500).
   EOT
   type = object({
     cidr        = string
@@ -75,6 +77,7 @@ variable "network" {
     dns_servers = optional(list(string), ["1.1.1.1", "8.8.8.8"])
     api_vip     = optional(string)
     interface   = optional(string, "eth0")
+    mtu         = optional(number)
   })
 
   validation {

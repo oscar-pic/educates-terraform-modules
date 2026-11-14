@@ -343,10 +343,13 @@ if $PVE_OK; then
     fi
     path="/sdn/zones/$zone/$bridge"; [ -n "$vlan" ] && path="$path/$vlan"
     check_privs "$TOKEN" "bridge $bridge" "$path" SDN.Use
+    if [ "$zone" != "localnetwork" ] && [ -z "$3" ]; then
+      warn "bridge $bridge is an SDN VNet (zone $zone): if the zone is VXLAN or EVPN its MTU is lower than 1500 (1450 by default); set mtu = 1 to inherit it"
+    fi
   }
-  check_bridge "$(cfg '.network.bridge // "vmbr0"')" "$(cfg '.network.vlan_id // empty')"
+  check_bridge "$(cfg '.network.bridge // "vmbr0"')" "$(cfg '.network.vlan_id // empty')" "$(cfg '.network.mtu // empty')"
   SN_BRIDGE="$(cfg '.storage_network.bridge // empty')"
-  [ -n "$SN_BRIDGE" ] && check_bridge "$SN_BRIDGE" "$(cfg '.storage_network.vlan_id // empty')"
+  [ -n "$SN_BRIDGE" ] && check_bridge "$SN_BRIDGE" "$(cfg '.storage_network.vlan_id // empty')" "$(cfg '.storage_network.mtu // 9000')"
 
   if [ "$(cfg '.proxmox.ha_enabled // false')" = "true" ]; then
     check_privs "$TOKEN" "Proxmox HA" "/" Sys.Audit Sys.Console

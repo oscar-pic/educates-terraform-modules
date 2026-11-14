@@ -82,7 +82,7 @@ No SSH access to the Proxmox hosts is needed.
 
 | Item | Notes |
 |---|---|
-| Bridge (and VLAN, if any) for the nodes | For example `vmbr0` |
+| Bridge (and VLAN, if any) for the nodes | For example `vmbr0`, or an SDN VNet. On a VXLAN or EVPN VNet (MTU 1450 by default), set `network.mtu = 1` so the VMs inherit the VNet MTU |
 | Node subnet, gateway, DNS servers | Static addresses. No DHCP needed |
 | One IP per Talos node | In the node subnet |
 | One IP for the Kubernetes API VIP | Required with more than one control-plane node |
