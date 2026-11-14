@@ -111,13 +111,48 @@ scripts/jump-host.sh shell       # shell with KUBECONFIG and TALOSCONFIG set
 - The storage driver you chose, with a default StorageClass.
 - `kubeconfig-<cluster_name>.yaml` and `talosconfig-<cluster_name>`, written next to the root module or to `client_configs_dir`. They are admin credentials: keep them private.
 
-Quick check:
+### Using kubectl and talosctl
+
+The deployment writes two client files, `kubeconfig-<cluster_name>.yaml` and `talosconfig-<cluster_name>`, to `client_configs_dir`: next to the root module, or `<work dir>/state` on a jump host. They are **separate files**, like the kubeconfig files of the EKS and GKE modules. Never merge them into `~/.kube/config` or `~/.talos/config`, least of all on a shared jump host where those files belong to someone else. Point the tools at them instead, in one of three ways.
+
+**1. Environment variables**, for a whole shell session:
 
 ```shell
+export KUBECONFIG=<dir>/kubeconfig-<cluster_name>.yaml
+export TALOSCONFIG=<dir>/talosconfig-<cluster_name>
+
 kubectl get nodes -o wide
+kubectl get pods -A
 kubectl get storageclass
-talosctl health
+talosctl health                            # endpoints and nodes come from the talosconfig
+talosctl -n <node-ip> dashboard            # live view of one node
+talosctl -n <node-ip> logs kubelet
 ```
+
+**2. Explicit flags**, for a single command, without touching the environment:
+
+```shell
+kubectl --kubeconfig <dir>/kubeconfig-<cluster_name>.yaml get nodes
+talosctl --talosconfig <dir>/talosconfig-<cluster_name> -n <node-ip> version
+```
+
+**3. On a jump host, the prepared session.** From your workstation:
+
+```shell
+scripts/jump-host.sh shell
+```
+
+It opens a `tmux` session on the jump host, in the root module directory. `KUBECONFIG`, `TALOSCONFIG`, the secrets and `<work dir>/bin` are already set, and `HOME` points inside the work directory. To work in an SSH session of your own instead, load the same environment first:
+
+```shell
+ssh <jump host>
+. <work dir>/repo/root-modules/educates-on-proxmox/scripts/guest-env.sh <work dir>
+kubectl get nodes
+```
+
+Load it before running `kubectl`, `helm`, `talosctl` or `tofu` on a jump host that is not yours. Without it, those tools write caches to the host user's home (`~/.kube/cache`, `~/.kube/http-cache`, `~/.cache/helm`).
+
+Without `-n`, `talosctl` talks to the talosconfig's default node, the first control-plane node (`talosctl config info` shows it). `talosctl health` checks the whole cluster from there. For other nodes, pass `-n <ip>`, or several at once: `-n <ip1>,<ip2>`.
 
 ## 5. Install Educates
 
