@@ -118,7 +118,18 @@ resource "talos_machine" "node" {
   # Kubernetes upgrades belong to talos_cluster (upgrade-k8s), not to parallel re-applies.
   ignore_kubernetes_upgrade_drift = true
 
+  # The image the node already runs, so the provider never upgrades on create.
+  # Without it, provider v0.12.0 treats the unknown computed value as set and tries
+  # an upgrade to "" ("failed to parse image reference").
+  image = data.talos_image_factory_urls.this.urls.installer
+
   depends_on = [proxmox_virtual_environment_vm.node]
+
+  lifecycle {
+    # Talos OS upgrades are done with talosctl, one node at a time (docs/upgrades.md):
+    # a new image here would upgrade every node in parallel and break etcd quorum.
+    ignore_changes = [image]
+  }
 }
 
 # Bootstraps etcd once, then owns Kubernetes upgrades (changing kubernetes_version
