@@ -55,4 +55,8 @@ provider "kubectl" {
   client_certificate     = module.cluster.kubernetes.client_certificate
   client_key             = module.cluster.kubernetes.client_key
   load_config_file       = false
+  # The LoadBalancer IP pool and L2 policy are Cilium CRs. The Talos health check can
+  # pass before the Cilium operator registers their CRDs: retry for ~8 minutes
+  # (exponential backoff, 3 s to 30 s) instead of failing the first apply.
+  apply_retry_count = 20
 }
