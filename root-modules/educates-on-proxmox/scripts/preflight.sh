@@ -16,17 +16,19 @@
 set -u
 
 usage() {
-  echo "Usage: $0 --var-file <file.tfvars> [--after]" >&2
+  echo "Usage: $0 --var-file <file.tfvars> [--after] [--client-configs-dir <dir>]" >&2
   exit 2
 }
 
 VAR_FILE=""
 MODE="before"
+CLIENT_DIR=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --var-file) VAR_FILE="${2:-}"; shift 2 ;;
     --var-file=*) VAR_FILE="${1#*=}"; shift ;;
     --after) MODE="after"; shift ;;
+    --client-configs-dir) CLIENT_DIR="${2:-}"; shift 2 ;;
     -h|--help) usage ;;
     *) usage ;;
   esac
@@ -197,7 +199,7 @@ if [ "$MODE" = "after" ]; then
     *) fail "Kubernetes API https://$API_HOST:6443 not reachable (HTTP ${code:-none})" ;;
   esac
 
-  DIR="$(cfg '.client_configs_dir // empty')"; DIR="${DIR:-$ROOT_DIR}"
+  DIR="${CLIENT_DIR:-$(cfg '.client_configs_dir // empty')}"; DIR="${DIR:-$ROOT_DIR}"
   CN="$(cfg '.cluster_name')"
   if have talosctl && [ -f "$DIR/talosconfig-$CN" ]; then
     if TALOSCONFIG="$DIR/talosconfig-$CN" talosctl -n "$FIRST_CP" health --wait-timeout 2m >"$TMP/health" 2>&1; then

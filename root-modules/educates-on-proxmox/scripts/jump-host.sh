@@ -11,16 +11,19 @@
 #   JUMP_DIR    working directory on the jump host (default: ~/educates)
 #   REPO_URL    repository to clone (default: this clone's 'origin' URL)
 #   REPO_REF    commit, tag or branch to deploy (default: this clone's HEAD commit, which must be pushed)
+#   JUMP_VARS_FILE  name of your tfvars file in JUMP_DIR (default: site.tfvars)
 #
 # Layout on the jump host (created by `setup`; you add site.tfvars and proxmox.env):
 #
 #   $JUMP_DIR/repo/          clone, pinned to REPO_REF, push disabled
-#   $JUMP_DIR/site.tfvars    your values
+#   $JUMP_DIR/site.tfvars    your values (name set by JUMP_VARS_FILE)
 #   $JUMP_DIR/proxmox.env    secrets (TF_VAR_...), mode 0600
 #   $JUMP_DIR/state/         state, plans, kubeconfig, talosconfig, mode 0700
+#                            (the script always passes client_configs_dir=$JUMP_DIR/state)
 #
 # Commands:
 #   setup                 create the layout, clone the repository, keep the state in state/
+#                         (an existing clone or backend_override.tf is kept)
 #   sync [ref]            check out ref (default REPO_REF) and run `tofu init`
 #   preflight [--after]   run scripts/preflight.sh on the jump host
 #   plan                  tofu plan, saved to state/plan.out
@@ -44,6 +47,7 @@ fi
 JUMP_DIR="${JUMP_DIR:-~/educates}"
 REPO_URL="${REPO_URL:-$(git -C "$REPO_ROOT" remote get-url origin)}"
 REPO_REF="${REPO_REF:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
+VARS_FILE="${JUMP_VARS_FILE:-site.tfvars}"
 SESSION="educates"
 
 # The remote shell expands $HOME; a leading ~ would not survive the quoting.
@@ -51,6 +55,7 @@ D="${JUMP_DIR/#\~/\$HOME}"
 MOD="$D/repo/$MODULE_PATH"
 LOAD_ENV="set -a; . \"$D/proxmox.env\"; set +a"
 TF="\$(command -v tofu || command -v terraform)"
+VARS="-var-file=\"$D/$VARS_FILE\" -var=\"client_configs_dir=$D/state\""
 
 remote() { ssh "$JUMP_HOST" "bash -lc '$1'"; }
 remote_tty() { ssh -t "$JUMP_HOST" "bash -lc '$1'"; }
@@ -63,7 +68,7 @@ case "$cmd" in
       mkdir -p \"$D/state\" && chmod 700 \"$D/state\"
       if [ ! -d \"$D/repo/.git\" ]; then git clone --quiet \"$REPO_URL\" \"$D/repo\"; fi
       git -C \"$D/repo\" remote set-url --push origin no-push
-      cat > \"$MOD/backend_override.tf\" <<EOF
+      [ -f \"$MOD/backend_override.tf\" ] || cat > \"$MOD/backend_override.tf\" <<EOF
 terraform {
   backend \"local\" {
     path = \"$D/state/terraform.tfstate\"
@@ -71,7 +76,7 @@ terraform {
 }
 EOF
       [ -f \"$D/proxmox.env\" ] && chmod 600 \"$D/proxmox.env\" || echo \"Create $D/proxmox.env (mode 0600) with TF_VAR_proxmox_api_token and TF_VAR_proxmox_csi_token_secret\"
-      [ -f \"$D/site.tfvars\" ] || echo \"Create $D/site.tfvars (start from $MOD/examples/), with client_configs_dir = \\\"$D/state\\\"\"
+      [ -f \"$D/$VARS_FILE\" ] || echo \"Create $D/$VARS_FILE (start from $MOD/examples/)\"
       echo \"Layout ready in $D\"
     "
     "$0" sync "$REPO_REF"
@@ -88,10 +93,10 @@ EOF
     "
     ;;
   preflight)
-    remote_tty "cd \"$MOD\" && $LOAD_ENV && scripts/preflight.sh --var-file \"$D/site.tfvars\" $*"
+    remote_tty "cd \"$MOD\" && $LOAD_ENV && scripts/preflight.sh --var-file \"$D/$VARS_FILE\" --client-configs-dir \"$D/state\" $*"
     ;;
   plan)
-    remote_tty "cd \"$MOD\" && $LOAD_ENV && $TF plan -input=false -var-file=\"$D/site.tfvars\" -out=\"$D/state/plan.out\""
+    remote_tty "cd \"$MOD\" && $LOAD_ENV && $TF plan -input=false $VARS -out=\"$D/state/plan.out\""
     ;;
   apply)
     remote_tty "tmux new -A -s $SESSION \"cd $MOD && $LOAD_ENV && $TF apply $D/state/plan.out; rm -f $D/state/plan.out; exec bash\""
