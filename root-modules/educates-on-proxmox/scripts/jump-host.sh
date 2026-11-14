@@ -28,7 +28,8 @@
 #   preflight [--after]   run scripts/preflight.sh on the jump host
 #   plan                  tofu plan, saved to state/plan.out
 #   apply                 apply state/plan.out inside tmux (re-attaches if the session exists)
-#   shell                 tmux session in the root module, with the secrets loaded
+#   shell                 tmux session in the root module: secrets, KUBECONFIG, TALOSCONFIG,
+#                         and $JUMP_DIR/bin in PATH (for tools you keep there, such as the educates CLI)
 #   ssh                   plain SSH session
 
 set -euo pipefail
@@ -104,7 +105,7 @@ EOF
     remote_tty "tmux new -A -s $SESSION \"cd $MOD && $LOAD_ENV && $TF apply $D/state/plan.out; rm -f $D/state/plan.out; exec bash\""
     ;;
   shell)
-    remote_tty "tmux new -A -s $SESSION \"cd $MOD && $LOAD_ENV && export KUBECONFIG=\$(ls $D/state/kubeconfig-*.yaml 2>/dev/null | head -n1) TALOSCONFIG=\$(ls $D/state/talosconfig-* 2>/dev/null | head -n1) && exec bash\""
+    remote_tty "tmux new -A -s $SESSION-shell \"cd $MOD && $LOAD_ENV && export PATH=$D/bin:\\\$PATH KUBECONFIG=\$(ls $D/state/kubeconfig-*.yaml 2>/dev/null | head -n1) TALOSCONFIG=\$(ls $D/state/talosconfig-* 2>/dev/null | head -n1) && exec bash\""
     ;;
   ssh)
     exec ssh -t "$JUMP_HOST"
