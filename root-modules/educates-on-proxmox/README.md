@@ -1,22 +1,19 @@
 # educates-on-proxmox
 
-Reference root module: a Talos Linux Kubernetes cluster on Proxmox VE, ready for Educates. It uses:
-
-- [infrastructure/proxmox-for-educates](../../infrastructure/proxmox-for-educates/) for the VMs, Talos and Cilium;
-- [infrastructure/proxmox-cluster-services](../../infrastructure/proxmox-cluster-services/) for the LoadBalancer IPs and storage (Proxmox CSI, Ceph CSI, NFS CSI).
+Reference root module: a Talos Linux Kubernetes cluster on Proxmox VE, ready for Educates. It configures the providers and uses [infrastructure/proxmox-for-educates](../../infrastructure/proxmox-for-educates/) for the VMs, Talos, Cilium, LoadBalancer IPs and storage (Proxmox CSI, Ceph CSI, NFS CSI).
 
 > Work in progress. This module builds the layer below Educates; Educates itself is installed with its own installer (Educates 4). See [docs/redesign.md](../../infrastructure/proxmox-for-educates/docs/redesign.md).
 
 ## Quick start
 
-1. Check the [requirements](../../infrastructure/proxmox-for-educates/README.md#requirements). In particular, the image datastore must allow the `Import` content type.
+1. Check the [requirements](../../infrastructure/proxmox-for-educates/docs/requirements.md): Proxmox, network, the machine you deploy from (workstation or jump host), its tools and connectivity. In particular, the image datastore must allow the `Import` content type, and that machine must reach every node's Talos API.
 2. Copy an example. `*.tfvars` files are git-ignored.
 
    ```shell
    cp examples/single-host.tfvars.example my-cluster.tfvars   # or examples/ha.tfvars.example
    ```
 
-3. Pass the secrets through the environment, not the file. The CSI token is created as described in [proxmox-cluster-services](../../infrastructure/proxmox-cluster-services/README.md#proxmox-csi-token).
+3. Pass the secrets through the environment, not the file. The CSI token is created as described in [proxmox-for-educates](../../infrastructure/proxmox-for-educates/README.md#proxmox-csi-token).
 
    ```shell
    export TF_VAR_proxmox_api_token='terraform@pve!educates=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
@@ -24,10 +21,11 @@ Reference root module: a Talos Linux Kubernetes cluster on Proxmox VE, ready for
    # export TF_VAR_ceph_csi_user_key=...   # only with Ceph CSI
    ```
 
-4. Create the cluster:
+4. Check that this machine meets the requirements, then create the cluster:
 
    ```shell
    tofu init
+   scripts/preflight.sh --var-file my-cluster.tfvars
    tofu apply -var-file=my-cluster.tfvars
    ```
 
@@ -40,6 +38,12 @@ Reference root module: a Talos Linux Kubernetes cluster on Proxmox VE, ready for
    ```
 
 Terraform works as well as OpenTofu.
+
+## Deploying from a jump host
+
+If your workstation does not reach the node network (TCP 50000 and 6443 on every node), deploy from a jump host. `scripts/jump-host.sh` drives it over SSH: it sets up the layout, clones this repository at your pushed commit, and runs the preflight, `plan` and `apply` (inside `tmux`) there. The jump host's name and directory go in `jump-host.env` (copy `jump-host.env.example`; git-ignored). See [requirements: where you deploy from](../../infrastructure/proxmox-for-educates/docs/requirements.md#where-you-deploy-from-workstation-or-jump-host).
+
+After the first apply, `scripts/preflight.sh --var-file <file> --after` tells whether a machine can operate the cluster directly.
 
 ## State
 

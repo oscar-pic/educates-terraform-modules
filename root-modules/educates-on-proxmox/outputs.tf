@@ -27,5 +27,5 @@ output "talosconfig" {
 
 output "storage_classes" {
   description = "StorageClasses available in the cluster (default first)."
-  value       = concat([module.cluster_services.default_storage_class], [for c in module.cluster_services.storage_classes : c if c != module.cluster_services.default_storage_class])
+  value       = concat([module.cluster.default_storage_class], [for c in module.cluster.storage_classes : c if c != module.cluster.default_storage_class])
 }

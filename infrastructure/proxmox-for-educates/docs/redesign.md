@@ -25,17 +25,21 @@ The first Proxmox attempt (fork branch `proxmox`) had these problems:
 ## Architecture
 
 ```
-root-modules/educates-on-proxmox            providers, wiring, examples
- ├─ infrastructure/proxmox-for-educates     VMs + Talos + Cilium            (phase 1)
- ├─ infrastructure/proxmox-cluster-services LB IP pool, CSI drivers         (phase 2)
- └─ platform/educates                       Educates itself (maintained by the Educates team, not part of this work)
+root-modules/educates-on-proxmox          providers, wiring, examples
+ ├─ infrastructure/proxmox-for-educates   VMs + Talos + Cilium (phase 1), then LB IP pool + CSI drivers (phase 2)
+ └─ platform/educates                     Educates itself (maintained by the Educates team, not part of this work)
 ```
 
-### Phase 1: cluster (`infrastructure/proxmox-for-educates`)
+Same layout as EKS and GKE: one `infrastructure/<provider>-for-educates` module that leaves the cluster ready for Educates, and one `root-modules/educates-on-<provider>` that configures the providers and composes it. The two phases are two groups of files in the same module, not two modules.
+
+```
+```
+
+### Phase 1: cluster (files `10-` to `30-`)
 
 **Image**
 - The Talos Image Factory builds a schematic (extensions and kernel arguments) and serves the `nocloud` disk image.
-- `proxmox_download_file` downloads it with `content_type = "import"` and zstd decompression, using only the API.
+- `proxmox_download_file` downloads it with `content_type = "import"` as qcow2, using only the API. Proxmox does not decompress `import` downloads, so `raw.zst` is not an option.
 - VMs import their disk from it (`import_from`, with `ignore_changes`). A new Talos version only replaces the downloaded file.
 
 **Network bootstrap**
@@ -72,9 +76,9 @@ root-modules/educates-on-proxmox            providers, wiring, examples
 **Proxmox HA (optional)**
 - Each VM is registered as an HA resource.
 
-### Phase 2: cluster services (`infrastructure/proxmox-cluster-services`)
+### Phase 2: cluster services (files `40-` and `50-`)
 
-The module uses the `helm` and `kubectl` providers, which the root module configures with the credentials of the new cluster. It runs after the phase-1 health check.
+These resources use the `helm` and `kubectl` providers, which the root module configures from the module's own `kubernetes` output (as EKS does). They depend on the phase-1 health check, so they only run against a healthy cluster. The Cilium chart is rendered by a second Helm configuration without cluster access (`helm.template`).
 
 
 - **LoadBalancer IPs:** a `CiliumLoadBalancerIPPool` plus a `CiliumL2AnnouncementPolicy`.
@@ -140,6 +144,14 @@ The end-to-end test installs Educates this way to prove the layer works. It does
 - When Gateway API is enabled, the Cilium operator must see the Gateway API CRDs at its first start. If it starts without them, it disables the feature without reporting it. Talos applies the external manifest in the same pass as the inline one; the end-to-end test checks the result.
 - The Educates operator on Talos with the bundled Kyverno and Contour (Envoy `LoadBalancer` service via Cilium L2).
 - Required Proxmox API token privileges (minimal role).
+- CPU baseline: newer CSI images may require x86-64-v3 (AVX2), while the default `proxmox.cpu_type` is `x86-64-v2-AES`. Check the CSI images against the default and the hardware, and raise the default or document it.
+- With `reclaimPolicy: Delete`, deleting a PVC deletes the Proxmox disk or Ceph volume. The end-to-end test checks this on purpose.
+
+## Possible later additions (out of the current scope)
+
+- **People access through OIDC** (one client per cluster), keeping the admin kubeconfig as break-glass only.
+- **Control-plane metrics.** Controller-manager and scheduler bind addresses for scraping. Exposing etcd metrics needs a node reboot.
+- **Monitoring agents.** The node-exporter namespace needs the `privileged` Pod Security level. Talos has read-only paths by design, so generic VM alerts must be adapted.
 
 ## Planned deliverables
 

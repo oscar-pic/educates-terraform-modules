@@ -84,3 +84,8 @@ CoreDNS runs two replicas that may land on the same node. Give it a PodDisruptio
 - **Adding a node.** Add it to `nodes` and apply. It joins at `talos.kubernetes_version`.
 - **Removing a worker.** Drain it first, then remove it from `nodes`.
 - **Removing a control-plane node.** Remove it from etcd first (`talosctl -n <node-ip> reset --graceful`), and keep an odd number of control-plane nodes.
+
+## Notes
+
+- **Discovery service.** Without the public Talos discovery service (air-gapped clusters, or disabled by policy), `talosctl get members` returns nothing. That is normal. Use `talosctl health` instead.
+- **Controllers after a control-plane change.** After restarting or upgrading the control plane, check that controllers processed their resources, not only that their pods run. A controller that started before the API was reachable can switch a feature off without reporting it.

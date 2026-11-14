@@ -11,6 +11,7 @@ resource "proxmox_virtual_environment_vm" "node" {
   name        = local.hostnames[each.key]
   node_name   = each.value.proxmox_node
   vm_id       = each.value.vm_id
+  pool_id     = var.proxmox.pool
   description = "Talos ${each.value.role} of Kubernetes cluster '${var.cluster_name}'. Managed by OpenTofu/Terraform."
   tags        = sort(distinct(concat(["talos", var.cluster_name, each.value.role], var.proxmox.tags)))
 

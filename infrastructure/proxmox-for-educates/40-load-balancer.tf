@@ -16,6 +16,8 @@ resource "kubectl_manifest" "lb_ip_pool" {
       ]
     }
   })
+
+  depends_on = [data.talos_cluster_health.this]
 }
 
 resource "kubectl_manifest" "l2_announcement_policy" {
@@ -29,4 +31,6 @@ resource "kubectl_manifest" "l2_announcement_policy" {
       externalIPs     = false
     }
   })
+
+  depends_on = [data.talos_cluster_health.this]
 }

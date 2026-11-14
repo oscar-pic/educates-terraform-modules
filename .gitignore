@@ -55,3 +55,6 @@ terraform.rc
 **/certs/
 **/build/
 **/talosconfig*
+
+# Jump host settings for root-modules/*/scripts/jump-host.sh (site-specific)
+jump-host.env

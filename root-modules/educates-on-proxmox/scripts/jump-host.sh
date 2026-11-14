@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Deploy from a jump host, driven over SSH from your workstation.
+#
+# Use it when your workstation cannot reach the node network directly (see docs/requirements.md).
+# Everything runs on the jump host; nothing site-specific is stored in the repository.
+#
+# Configuration: environment variables, or a git-ignored file `jump-host.env` next to this
+# root module (copy jump-host.env.example):
+#
+#   JUMP_HOST   SSH destination: host, user@host or an alias from ~/.ssh/config (required)
+#   JUMP_DIR    working directory on the jump host (default: ~/educates)
+#   REPO_URL    repository to clone (default: this clone's 'origin' URL)
+#   REPO_REF    commit, tag or branch to deploy (default: this clone's HEAD commit, which must be pushed)
+#
+# Layout on the jump host (created by `setup`; you add site.tfvars and proxmox.env):
+#
+#   $JUMP_DIR/repo/          clone, pinned to REPO_REF, push disabled
+#   $JUMP_DIR/site.tfvars    your values
+#   $JUMP_DIR/proxmox.env    secrets (TF_VAR_...), mode 0600
+#   $JUMP_DIR/state/         state, plans, kubeconfig, talosconfig, mode 0700
+#
+# Commands:
+#   setup                 create the layout, clone the repository, keep the state in state/
+#   sync [ref]            check out ref (default REPO_REF) and run `tofu init`
+#   preflight [--after]   run scripts/preflight.sh on the jump host
+#   plan                  tofu plan, saved to state/plan.out
+#   apply                 apply state/plan.out inside tmux (re-attaches if the session exists)
+#   shell                 tmux session in the root module, with the secrets loaded
+#   ssh                   plain SSH session
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(git -C "$MODULE_DIR" rev-parse --show-toplevel)"
+MODULE_PATH="${MODULE_DIR#"$REPO_ROOT"/}"
+
+if [ -f "$MODULE_DIR/jump-host.env" ]; then
+  # shellcheck disable=SC1091
+  . "$MODULE_DIR/jump-host.env"
+fi
+
+: "${JUMP_HOST:?Set JUMP_HOST (in jump-host.env or the environment)}"
+JUMP_DIR="${JUMP_DIR:-~/educates}"
+REPO_URL="${REPO_URL:-$(git -C "$REPO_ROOT" remote get-url origin)}"
+REPO_REF="${REPO_REF:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
+SESSION="educates"
+
+# The remote shell expands $HOME; a leading ~ would not survive the quoting.
+D="${JUMP_DIR/#\~/\$HOME}"
+MOD="$D/repo/$MODULE_PATH"
+LOAD_ENV="set -a; . \"$D/proxmox.env\"; set +a"
+TF="\$(command -v tofu || command -v terraform)"
+
+remote() { ssh "$JUMP_HOST" "bash -lc '$1'"; }
+remote_tty() { ssh -t "$JUMP_HOST" "bash -lc '$1'"; }
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  setup)
+    remote "
+      set -e
+      mkdir -p \"$D/state\" && chmod 700 \"$D/state\"
+      if [ ! -d \"$D/repo/.git\" ]; then git clone --quiet \"$REPO_URL\" \"$D/repo\"; fi
+      git -C \"$D/repo\" remote set-url --push origin no-push
+      cat > \"$MOD/backend_override.tf\" <<EOF
+terraform {
+  backend \"local\" {
+    path = \"$D/state/terraform.tfstate\"
+  }
+}
+EOF
+      [ -f \"$D/proxmox.env\" ] && chmod 600 \"$D/proxmox.env\" || echo \"Create $D/proxmox.env (mode 0600) with TF_VAR_proxmox_api_token and TF_VAR_proxmox_csi_token_secret\"
+      [ -f \"$D/site.tfvars\" ] || echo \"Create $D/site.tfvars (start from $MOD/examples/), with client_configs_dir = \\\"$D/state\\\"\"
+      echo \"Layout ready in $D\"
+    "
+    "$0" sync "$REPO_REF"
+    ;;
+  sync)
+    ref="${1:-$REPO_REF}"
+    remote "
+      set -e
+      cd \"$D/repo\"
+      git fetch --quiet --tags origin
+      git checkout --quiet --detach \"$ref\" 2>/dev/null || git checkout --quiet --detach \"origin/$ref\"
+      echo \"Checked out \$(git rev-parse --short HEAD) (\$(git log -1 --format=%s))\"
+      cd \"$MOD\" && $TF init -input=false >/dev/null && echo \"init done\"
+    "
+    ;;
+  preflight)
+    remote_tty "cd \"$MOD\" && $LOAD_ENV && scripts/preflight.sh --var-file \"$D/site.tfvars\" $*"
+    ;;
+  plan)
+    remote_tty "cd \"$MOD\" && $LOAD_ENV && $TF plan -input=false -var-file=\"$D/site.tfvars\" -out=\"$D/state/plan.out\""
+    ;;
+  apply)
+    remote_tty "tmux new -A -s $SESSION \"cd $MOD && $LOAD_ENV && $TF apply $D/state/plan.out; rm -f $D/state/plan.out; exec bash\""
+    ;;
+  shell)
+    remote_tty "tmux new -A -s $SESSION \"cd $MOD && $LOAD_ENV && export KUBECONFIG=\$(ls $D/state/kubeconfig-*.yaml 2>/dev/null | head -n1) TALOSCONFIG=\$(ls $D/state/talosconfig-* 2>/dev/null | head -n1) && exec bash\""
+    ;;
+  ssh)
+    exec ssh -t "$JUMP_HOST"
+    ;;
+  *)
+    sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+    exit 2
+    ;;
+esac

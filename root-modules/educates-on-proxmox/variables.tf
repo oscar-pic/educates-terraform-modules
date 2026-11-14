@@ -67,15 +67,15 @@ variable "gateway_api" {
 }
 
 variable "load_balancer" {
-  description = "LoadBalancer IP pools and interfaces. See infrastructure/proxmox-cluster-services."
+  description = "LoadBalancer IP pools and interfaces. See infrastructure/proxmox-for-educates."
   type        = any
 }
 
 variable "storage" {
   description = <<-EOT
     Storage backends: { default_class = "...", proxmox_csi = {...}, ceph_csi = {...}, nfs_csi = {...} }.
-    See infrastructure/proxmox-cluster-services. Proxmox CSI defaults its url, insecure flag and region
-    from proxmox_endpoint, proxmox_insecure and proxmox.region.
+    See infrastructure/proxmox-for-educates. Proxmox CSI defaults its url and insecure flag
+    to proxmox_endpoint and proxmox_insecure; its region is proxmox.region.
   EOT
   type        = any
 }
@@ -95,7 +95,13 @@ variable "ceph_csi_user_key" {
 }
 
 variable "write_client_configs" {
-  description = "Write kubeconfig and talosconfig files next to this root module."
+  description = "Write kubeconfig and talosconfig files (mode 0600) to client_configs_dir."
   type        = bool
   default     = true
+}
+
+variable "client_configs_dir" {
+  description = "Directory for the kubeconfig and talosconfig files. Defaults to this root module's directory; set it to keep them outside the repository clone."
+  type        = string
+  default     = null
 }

@@ -15,23 +15,22 @@ resource "talos_image_factory_schematic" "this" {
 }
 
 data "talos_image_factory_urls" "this" {
-  talos_version     = var.talos.version
-  schematic_id      = talos_image_factory_schematic.this.id
-  platform          = "nocloud"
-  architecture      = "amd64"
-  disk_image_format = "raw.zst"
+  talos_version = var.talos.version
+  schematic_id  = talos_image_factory_schematic.this.id
+  platform      = "nocloud"
+  architecture  = "amd64"
+  # qcow2, not raw.zst: Proxmox only decompresses downloads of ISO content, never "import".
+  disk_image_format = "qcow2"
 }
 
 resource "proxmox_download_file" "talos" {
   for_each = toset(local.image_nodes)
 
-  node_name               = each.key
-  datastore_id            = var.proxmox.image_datastore
-  content_type            = "import"
-  url                     = data.talos_image_factory_urls.this.urls.disk_image
-  decompression_algorithm = "zst"
-  file_name               = "talos-${var.talos.version}-${substr(talos_image_factory_schematic.this.id, 0, 12)}-nocloud-amd64.raw"
-  # The URL serves a compressed file, so its size never matches the stored one:
-  # without this, every plan would want to download it again.
+  node_name    = each.key
+  datastore_id = var.proxmox.image_datastore
+  content_type = "import"
+  url          = data.talos_image_factory_urls.this.urls.disk_image
+  file_name    = "talos-${var.talos.version}-${substr(talos_image_factory_schematic.this.id, 0, 12)}-nocloud-amd64.qcow2"
+  # Never re-download an existing file: the name already pins version and schematic.
   overwrite = false
 }

@@ -13,6 +13,9 @@ resource "kubectl_manifest" "namespace" {
       }
     }
   })
+
+  # Talk to the cluster only once it passed the health check.
+  depends_on = [data.talos_cluster_health.this]
 }
 
 ###############################################################################
@@ -35,7 +38,7 @@ resource "kubectl_manifest" "proxmox_csi_config" {
           insecure     = var.proxmox_csi.insecure
           token_id     = var.proxmox_csi.token_id
           token_secret = var.proxmox_csi_token_secret
-          region       = var.proxmox_csi.region
+          region       = var.proxmox.region # matches the topology.kubernetes.io/region node label
         }]
       })
     }

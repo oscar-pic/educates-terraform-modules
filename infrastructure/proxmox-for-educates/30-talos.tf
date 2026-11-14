@@ -10,6 +10,8 @@ resource "talos_machine_secrets" "this" {
 }
 
 data "helm_template" "cilium" {
+  provider = helm.template
+
   name         = "cilium"
   namespace    = "kube-system"
   repository   = "https://helm.cilium.io"

@@ -52,3 +52,13 @@ output "health_check" {
   description = "Set once the cluster passed the Talos health check (etcd, API, all nodes Ready)."
   value       = data.talos_cluster_health.this.id
 }
+
+output "storage_classes" {
+  description = "StorageClasses created by this module (CSI drivers)."
+  value       = local.storage_classes
+}
+
+output "default_storage_class" {
+  description = "Default StorageClass."
+  value       = var.default_storage_class
+}
