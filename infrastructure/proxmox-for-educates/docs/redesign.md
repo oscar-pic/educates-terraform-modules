@@ -138,14 +138,36 @@ The end-to-end test installs Educates this way to prove the layer works. It does
 | Single-host example | Kept, as the evaluation/lab topology | It is the common user setup and the cheapest end-to-end test |
 | Tooling | Plain `tofu`/`terraform`; no Makefile or PowerShell wrapper | Fewer moving parts, works on every OS |
 
-## Open points to verify on real hardware
+## Results of the first real deployment
+
+Proxmox VE 9.2, three hosts, SDN VXLAN VNet, 1 control-plane node and 2 workers, Proxmox CSI. Educates `4.0.0-alpha.13` installed with its CLI from a jump host, and a sample workshop deployed over HTTPS with a lab CA.
+
+Verified:
+
+- The minimal token privileges. They are now in [requirements.md](requirements.md#credentials).
+- CPU baseline `x86-64-v2-AES` on x86-64-v2 hosts: Talos, Cilium and Proxmox CSI run.
+- PVC deletion with `reclaimPolicy: Delete` removes the Proxmox disk.
+- The Educates operator on Talos with the bundled Kyverno and Contour, with the Envoy `LoadBalancer` Service on a Cilium L2 IP.
+- MTU on an SDN VNet with `network.mtu = 1`: the VMs inherit the VNet MTU.
+
+Fixes the deployment needed, all in the module now:
+
+- The Talos image is downloaded as qcow2: Proxmox does not decompress `import` downloads.
+- Workaround for a bug in `terraform-provider-talos` v0.12.0 ([siderolabs/terraform-provider-talos#420](https://github.com/siderolabs/terraform-provider-talos/issues/420)): without `image`, `talos_machine` tries an OS upgrade to an empty image on create. The module sets `image` and ignores later changes. Remove the workaround once a fixed release is out.
+- The Talos health check passes before Cilium registers its CRDs. The `kubectl` provider retries (`apply_retry_count`).
+- On a jump host, the tools wrote caches to the host user's home. `scripts/guest-env.sh` now keeps everything inside the work directory.
+
+## Open points
 
 - Proxmox cloud-init drive on local storage with Proxmox HA (live migration).
 - When Gateway API is enabled, the Cilium operator must see the Gateway API CRDs at its first start. If it starts without them, it disables the feature without reporting it. Talos applies the external manifest in the same pass as the inline one; the end-to-end test checks the result.
-- The Educates operator on Talos with the bundled Kyverno and Contour (Envoy `LoadBalancer` service via Cilium L2).
-- Required Proxmox API token privileges (minimal role).
-- CPU baseline: newer CSI images may require x86-64-v3 (AVX2), while the default `proxmox.cpu_type` is `x86-64-v2-AES`. Check the CSI images against the default and the hardware, and raise the default or document it.
-- With `reclaimPolicy: Delete`, deleting a PVC deletes the Proxmox disk or Ceph volume. The end-to-end test checks this on purpose.
+- Who installs the Gateway API CRDs once Educates ships agentgateway: this module or Educates.
+- **Ingress IP and DNS**, to discuss with the Educates team:
+  - The Envoy Service gets the first free IP of the pool, so it has to be pinned by hand (`lbipam.cilium.io/ips`) when the wildcard record points to a fixed IP. Educates 4 has no setting for Envoy Service annotations yet. A generic annotations map would cover every IPAM (Cilium, MetalLB, kube-vip) and cloud options.
+  - With Gateway API, `Gateway.spec.addresses` and `Gateway.spec.infrastructure.annotations` cover the same need.
+  - The alternative is to let Educates write the record (bundled external-dns). It only supports Route53 and Cloud DNS so far; on-premises DNS (RFC2136, PowerDNS…) would need more providers.
+- The Educates operator pod triggers a Pod Security `restricted` warning on Talos: it lacks `seccompProfile: RuntimeDefault`. It is only a warning, not blocking. To report to the Educates team.
+- The Talos health check reports a healthy cluster before every node is `Ready` with its CNI. Consider an extra readiness gate before the cluster services, beyond the retries.
 
 ## Possible later additions (out of the current scope)
 

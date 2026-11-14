@@ -172,7 +172,43 @@ The cluster built here meets what Educates expects:
 | Pod Security levels for its namespaces | Talos defaults to `baseline`; the Educates operator labels its own namespaces `privileged` |
 | A policy engine | Educates installs Kyverno (`kyverno.provider: Bundled`) |
 
-A generic Kubernetes cluster has no dedicated configuration kind, so use `EducatesConfig` in `Managed` mode. This example uses a lab CA, which is the simplest option for a private domain; your users' browsers must trust that CA.
+Tested with Educates `4.0.0-alpha.13`, installed with its CLI from a jump host.
+
+### Certificates: your own lab CA
+
+On a private domain, the simplest option is your own CA, trusted by your users' browsers. Use `StaticCertificate`, so the CA private key never enters the cluster: sign a wildcard certificate with the CA, outside the cluster, and give Educates only that certificate and the CA certificate.
+
+```shell
+DOMAIN=workshops.example.com
+mkdir -m 700 ca && cd ca && umask 077
+
+# CA, 5 years. Name constraints: it can only sign names under $DOMAIN, even once imported into browsers.
+openssl req -x509 -new -newkey rsa:3072 -nodes -sha256 -days 1825 -keyout ca.key -out ca.crt \
+  -subj "/O=Educates/CN=Educates Lab CA" \
+  -addext "basicConstraints=critical,CA:TRUE,pathlen:0" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+  -addext "nameConstraints=critical,permitted;DNS:$DOMAIN"
+
+# Wildcard certificate, 397 days (the maximum browsers accept).
+openssl req -new -newkey rsa:2048 -nodes -sha256 -keyout wildcard.key -out wildcard.csr -subj "/CN=*.$DOMAIN"
+printf "subjectAltName=DNS:*.%s,DNS:%s\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n" "$DOMAIN" "$DOMAIN" > wildcard.ext
+openssl x509 -req -in wildcard.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -days 397 -extfile wildcard.ext -out wildcard.crt
+rm wildcard.csr wildcard.ext && chmod 644 ca.crt wildcard.crt
+openssl verify -CAfile ca.crt wildcard.crt
+```
+
+- **What each file is for:**
+  - `ca.crt` is the file users import into their browser or operating system as a trusted authority;
+  - `ca.key` stays where you created it;
+  - before `wildcard.crt` expires, sign a new one with the same CA and update the Secret below.
+- **Other options:**
+  - Let's Encrypt with DNS-01 (`BundledCertManager` with ACME, only with the DNS providers Educates supports);
+  - `CustomCA`, where cert-manager signs with your CA, but then its private key is stored in the cluster.
+
+  See the Educates guide on secure HTTP connections.
+
+### Configure and deploy
+
+A generic Kubernetes cluster has no dedicated configuration kind, so use `EducatesConfig` in `Managed` mode:
 
 ```yaml
 # educates.yaml
@@ -181,19 +217,21 @@ kind: EducatesConfig
 educatesClusterConfig:
   mode: Managed
   ingress:
-    domain: workshops.example.com           # your domain; *.workshops.example.com -> Envoy IP
+    domain: workshops.example.com           # *.workshops.example.com must resolve to the Envoy IP
     ingressClassName: contour
     controller:
       provider: BundledContour
       bundledContour:
         envoyServiceType: LoadBalancer      # takes an IP from the Cilium LoadBalancer pool
     certificates:
-      provider: BundledCertManager
-      bundledCertManager:
-        issuerType: CustomCA
-        customCA:
-          caKeyPairSecretRef:
-            name: educates-custom-ca
+      provider: StaticCertificate
+      staticCertificate:
+        tlsSecretRef:
+          name: educates-wildcard-tls
+          namespace: educates-installer
+        caCertificateSecretRef:
+          name: educates-lab-ca
+          namespace: educates-installer
   policyEnforcement:
     clusterPolicy:
       engine: Kyverno
@@ -206,27 +244,39 @@ sessionManager: {}
 ```
 
 ```shell
-export KUBECONFIG=$PWD/kubeconfig-<cluster_name>.yaml
-
-# The lab CA (tls.crt/tls.key of a CA certificate), in the operator namespace, before deploying.
+# The Secrets, before deploying: the wildcard certificate and the CA certificate (no CA key).
 kubectl create namespace educates-installer
-kubectl -n educates-installer create secret tls educates-custom-ca --cert=ca.crt --key=ca.key
+kubectl -n educates-installer create secret tls educates-wildcard-tls --cert=ca/wildcard.crt --key=ca/wildcard.key
+kubectl -n educates-installer create secret generic educates-lab-ca --from-file=ca.crt=ca/ca.crt
 
 educates admin platform render --config educates.yaml    # optional: review what will be applied
-educates admin platform deploy --config educates.yaml
-
-# The EXTERNAL-IP of the Envoy LoadBalancer Service: point *.<domain> to it.
-kubectl -n contour get services
+educates admin platform deploy --config educates.yaml    # about 5 minutes
 ```
 
-Other certificate options:
+Without the Educates CLI, install the `educates-installer` Helm chart and apply the custom resources with `kubectl`, as the Helm-based installation guide explains.
 
-- **Your own wildcard certificate:** `StaticCertificate`.
-- **Let's Encrypt with DNS-01:** `BundledCertManager` with ACME. Only the DNS providers that Educates supports.
+### The ingress IP and the wildcard DNS record
 
-Both are described in the Educates guides. Without the Educates CLI, install the `educates-installer` Helm chart and apply the four custom resources with `kubectl`, as the Helm-based installation guide explains.
+Cilium gives the Envoy Service (`contour/contour-envoy`) the first free IP of the LoadBalancer pool. That IP is not predictable and may change if the Service is recreated. If your wildcard record `*.<domain>` points to a fixed IP, which is usual with an internal DNS, pin that IP on the Service after deploying:
 
-Then deploy a workshop and open the training portal, following the Educates documentation.
+```shell
+kubectl -n contour annotate service contour-envoy lbipam.cilium.io/ips=<ingress IP> --overwrite
+kubectl -n contour get service contour-envoy      # EXTERNAL-IP becomes <ingress IP>
+```
+
+The IP must be inside `load_balancer.ip_pools`. The annotation survives the reconciliations of the Educates operator. If Educates is reinstalled and the Service is recreated, pin it again.
+
+Educates 4 has no setting yet for Envoy Service annotations. Its bundled external-dns, which would write the record itself, only supports Route53 and Cloud DNS so far.
+
+### Check with a sample workshop
+
+```shell
+educates deploy-workshop -f https://github.com/educates/lab-k8s-fundamentals/releases/latest/download/workshop.yaml
+educates view-credentials        # portal URL and password
+curl --cacert ca/ca.crt -s -o /dev/null -w "%{http_code}\n" https://educates-cli-ui.<domain>/   # 302 (login): TLS OK
+```
+
+Open the portal URL in a browser that trusts `ca.crt`, and start the workshop. To remove the sample: `educates delete-workshop`, then `educates delete-portal`.
 
 > Educates 4 is in alpha, and its configuration may change between releases: check the guides of the version you install. Gateway API support (with agentgateway) is coming to Educates. This cluster can install the Gateway API CRDs already (`gateway_api.enabled`).
 
