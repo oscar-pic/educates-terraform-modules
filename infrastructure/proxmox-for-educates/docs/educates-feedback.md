@@ -106,7 +106,7 @@ Clouds use annotations as well, for static IPs and internal load balancers.
 
 ## 7. Reserved sessions not created after recreating a portal (to confirm)
 
-**Seen.** After deleting the `educates-cli` TrainingPortal and deploying the workshop again with `--reserved 1`, the portal logged `Updated status of workshop environment ... reserved=1`, but created no session, not even after a restart of its pod. With the previous portal, the same flag created the reserved session at once. Sessions on demand still worked.
+**Seen.** After deleting the `educates-cli` TrainingPortal and deploying the workshop again with `--reserved 1`, the portal logged `Updated status of workshop environment ... reserved=1`, but created no session, not even after a restart of its pod. With the previous portal, the same flag created the reserved session at once. Sessions on demand still worked. A brand-new portal with a different name (`e2e`, used by the end-to-end test) creates its sessions normally, every time. So it seems tied to recreating a portal with the same name.
 
 Also in the portal log, at start-up: kopf cannot list CRDs (`customresourcedefinitions ... forbidden` for the `training-portal` service account), and then `changes ... will not be noticed`. We do not know yet whether the two are related.
 
