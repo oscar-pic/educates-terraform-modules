@@ -327,7 +327,12 @@ else
         SURL=$(kubectl get workshopsessions -o json | jq -r --arg p "$PORTAL-w01" '[.items[] | select(.spec.environment.name == $p) | .status.educates.url // empty] | first // empty')
         for U in "$PURL" "$SURL"; do
           [ -z "$U" ] && continue
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 $CURL_CA "$U/")
+          # Contour needs a few seconds to program a new route: 503 until then.
+          for _ in $(seq 1 24); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 $CURL_CA "$U/")
+            case "$CODE" in 2*|3*) break ;; esac
+            sleep 5
+          done
           case "$CODE" in
             2*|3*) pass "HTTPS $U (HTTP $CODE, certificate trusted)" ;;
             000) fail "HTTPS $U: no answer or untrusted certificate (try --ca-file)" ;;

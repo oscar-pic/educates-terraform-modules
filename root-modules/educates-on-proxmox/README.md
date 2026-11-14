@@ -42,6 +42,10 @@ The full walk-through, from preparing Proxmox to installing Educates, is in [get
 
 Terraform works as well as OpenTofu.
 
+## Testing
+
+`scripts/e2e-test.sh` tests the deployed cluster end to end: storage, LoadBalancer, network, the Educates workshop network and, with `--workshop`, a real Educates workshop session. It deletes everything it creates. See [getting-started](../../infrastructure/proxmox-for-educates/docs/getting-started.md#test-it-end-to-end).
+
 ## Deploying from a jump host
 
 If your workstation does not reach the node network (TCP 50000 and 6443 on every node), deploy from a jump host. `scripts/jump-host.sh` drives it over SSH: it sets up the layout, clones this repository at your pushed commit, and runs the preflight, `plan` and `apply` (inside `tmux`) there. The jump host's name and directory go in `jump-host.env` (copy `jump-host.env.example`; git-ignored). See [requirements: where you deploy from](../../infrastructure/proxmox-for-educates/docs/requirements.md#where-you-deploy-from-workstation-or-jump-host).

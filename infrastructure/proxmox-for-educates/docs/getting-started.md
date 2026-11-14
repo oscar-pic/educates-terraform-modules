@@ -111,6 +111,29 @@ scripts/jump-host.sh shell       # shell with KUBECONFIG and TALOSCONFIG set
 - The storage driver you chose, with a default StorageClass.
 - `kubeconfig-<cluster_name>.yaml` and `talosconfig-<cluster_name>`, written next to the root module or to `client_configs_dir`. They are admin credentials: keep them private.
 
+### Test it end to end
+
+`scripts/e2e-test.sh` checks a deployed cluster, then Educates if it is installed. It creates its own resources in `e2e-*` namespaces and deletes them on exit, also when a check fails.
+
+| Area | Checks |
+|---|---|
+| Cluster | Nodes Ready, `talosctl health`, system pods running, exactly one default StorageClass |
+| Storage | A volume is created, attached and writable, then deleted with its claim |
+| LoadBalancer | A Service gets an IP from the pool and answers from the machine you run it on |
+| Pod network | Cluster DNS, Services, external names |
+| Educates workshop network | A replica of the Educates workshop namespace and NetworkPolicy reaches cluster DNS, Services and the API, while the metadata IP stays blocked (see [Workshop network policy and Cilium](#workshop-network-policy-and-cilium-handled-by-the-module)) |
+| Educates | Its resources are `Ready`, the ingress has its IP, and `*.<domain>` resolves to it |
+| `--workshop` | The sample workshop in a portal of its own (`e2e`). A real session starts, resolves the portal (needed to log in), reaches the API with `kubectl`, and the portal and the session answer over HTTPS with a trusted certificate |
+
+```shell
+export KUBECONFIG=<dir>/kubeconfig-<cluster_name>.yaml TALOSCONFIG=<dir>/talosconfig-<cluster_name>
+scripts/e2e-test.sh                                    # about 2 minutes
+scripts/e2e-test.sh --workshop --ca-file root-ca.crt   # with Educates installed; --ca-file if the CA is not in the system store
+scripts/jump-host.sh e2e --workshop                    # the same, on a jump host
+```
+
+More options: `--all-storage-classes`, `--image` for clusters that pull through a mirror, and `--keep` to inspect what was created. See `scripts/e2e-test.sh --help`.
+
 ### Using kubectl and talosctl
 
 The deployment writes two client files, `kubeconfig-<cluster_name>.yaml` and `talosconfig-<cluster_name>`, to `client_configs_dir`: next to the root module, or `<work dir>/state` on a jump host. They are **separate files**, like the kubeconfig files of the EKS and GKE modules. Never merge them into `~/.kube/config` or `~/.talos/config`, least of all on a shared jump host where those files belong to someone else. Point the tools at them instead, in one of three ways.
