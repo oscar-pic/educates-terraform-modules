@@ -122,6 +122,8 @@ resource "talos_machine" "node" {
   # Without it, provider v0.12.0 treats the unknown computed value as set and tries
   # an upgrade to "" ("failed to parse image reference").
   image = data.talos_image_factory_urls.this.urls.installer
+  # No OS upgrades through the provider, so nothing to drain (and no kubeconfig needed).
+  drain_on_upgrade = false
 
   depends_on = [proxmox_virtual_environment_vm.node]
 
