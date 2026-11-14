@@ -159,6 +159,9 @@ Fixes the deployment needed, all in the module now:
 
 ## Open points
 
+Findings for the Educates team are collected in [educates-feedback.md](educates-feedback.md).
+
+
 - Proxmox cloud-init drive on local storage with Proxmox HA (live migration).
 - When Gateway API is enabled, the Cilium operator must see the Gateway API CRDs at its first start. If it starts without them, it disables the feature without reporting it. Talos applies the external manifest in the same pass as the inline one; the end-to-end test checks the result.
 - Who installs the Gateway API CRDs once Educates ships agentgateway: this module or Educates.
