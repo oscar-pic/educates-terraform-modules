@@ -56,5 +56,6 @@ terraform.rc
 **/build/
 **/talosconfig*
 
-# Jump host settings for root-modules/*/scripts/jump-host.sh (site-specific)
+# Site-specific files (copies of the *.example templates)
 jump-host.env
+proxmox.env

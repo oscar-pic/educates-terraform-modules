@@ -45,6 +45,17 @@ If your workstation does not reach the node network (TCP 50000 and 6443 on every
 
 After the first apply, `scripts/preflight.sh --var-file <file> --after` tells whether a machine can operate the cluster directly.
 
+## Files you fill in
+
+Everything specific to your site (IPs, names, datastores, tokens) lives in files that are never committed. The repository only has templates:
+
+| Template | Copy to | Holds |
+|---|---|---|
+| [examples/single-host.tfvars.example](examples/single-host.tfvars.example), [examples/ha.tfvars.example](examples/ha.tfvars.example) | Any `*.tfvars` (git-ignored), or outside the clone | Your values: Proxmox endpoint, datastores, network, nodes, LoadBalancer range, storage |
+| [proxmox.env.example](proxmox.env.example) | Outside the clone, mode 0600 | Secrets: the Proxmox tokens, the Ceph key |
+| [backend_override.tf.example](backend_override.tf.example) | `backend_override.tf` (git-ignored) | Optional: state outside the clone |
+| [jump-host.env.example](jump-host.env.example) | `jump-host.env` (git-ignored) | Only with a jump host: its SSH name, work directory and tfvars file name |
+
 ## State
 
 The state holds the cluster PKI and the admin credentials. Keep it in an encrypted, access-controlled backend for anything beyond a lab: add a `backend` block, or use OpenTofu state encryption.

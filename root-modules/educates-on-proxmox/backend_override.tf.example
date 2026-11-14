@@ -1,0 +1,14 @@
+# Keeps the OpenTofu/Terraform state outside the repository clone.
+#
+# Copy it as backend_override.tf in this directory (git-ignored: *_override.tf) and set
+# an absolute path. OpenTofu merges *_override.tf files over the configuration.
+# scripts/jump-host.sh setup writes it on a jump host when it is missing.
+#
+# The state holds the cluster PKI and admin credentials: keep its directory private
+# (chmod 700), or use an encrypted remote backend instead (see README, "State").
+
+terraform {
+  backend "local" {
+    path = "/home/<user>/educates/state/terraform.tfstate"
+  }
+}
