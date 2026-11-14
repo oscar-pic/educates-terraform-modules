@@ -15,6 +15,8 @@ It uses only the Proxmox API (no SSH to the hypervisors) and needs no local tool
 
 It does not install an ingress controller or cert-manager: the Educates 4 operator installs its own (Contour, cert-manager, Kyverno).
 
+New here? Start with [docs/getting-started.md](docs/getting-started.md): from your Proxmox to a running Educates.
+
 Before you start, see [docs/requirements.md](docs/requirements.md): Proxmox, network, credentials, and the machine you deploy from. The design, its decisions and the open points are in [docs/redesign.md](docs/redesign.md). Upgrades and other day-2 tasks are in [docs/upgrades.md](docs/upgrades.md).
 
 ## Usage
@@ -46,6 +48,7 @@ provider "kubectl" {
   client_certificate     = module.cluster.kubernetes.client_certificate
   client_key             = module.cluster.kubernetes.client_key
   load_config_file       = false
+  apply_retry_count      = 20 # Cilium registers its CRDs a little after the cluster is healthy
 }
 
 module "cluster" {

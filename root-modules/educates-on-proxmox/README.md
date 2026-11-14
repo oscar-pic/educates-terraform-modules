@@ -6,6 +6,9 @@ Reference root module: a Talos Linux Kubernetes cluster on Proxmox VE, ready for
 
 ## Quick start
 
+The full walk-through, from preparing Proxmox to installing Educates, is in [getting-started.md](../../infrastructure/proxmox-for-educates/docs/getting-started.md).
+
+
 1. Check the [requirements](../../infrastructure/proxmox-for-educates/docs/requirements.md): Proxmox, network, the machine you deploy from (workstation or jump host), its tools and connectivity. In particular, the image datastore must allow the `Import` content type, and that machine must reach every node's Talos API.
 2. Copy an example. `*.tfvars` files are git-ignored.
 
