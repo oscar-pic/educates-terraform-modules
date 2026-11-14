@@ -20,6 +20,9 @@
 #   $JUMP_DIR/proxmox.env    secrets (TF_VAR_...), mode 0600
 #   $JUMP_DIR/state/         state, plans, kubeconfig, talosconfig, mode 0700
 #                            (the script always passes client_configs_dir=$JUMP_DIR/state)
+#   $JUMP_DIR/home/          HOME for every command run here (caches of kubectl, helm, providers):
+#                            nothing is written to the jump host user's home (scripts/guest-env.sh)
+#   $JUMP_DIR/bin/           optional tools (for example the educates CLI), first in PATH
 #
 # Commands:
 #   setup                 create the layout, clone the repository, keep the state in state/
@@ -30,7 +33,7 @@
 #   apply                 apply state/plan.out inside tmux (re-attaches if the session exists)
 #   shell                 tmux session in the root module: secrets, KUBECONFIG, TALOSCONFIG,
 #                         and $JUMP_DIR/bin in PATH (for tools you keep there, such as the educates CLI)
-#   ssh                   plain SSH session
+#   ssh                   plain SSH session (your own; guest-env.sh is not loaded)
 
 set -euo pipefail
 
@@ -53,15 +56,19 @@ REPO_REF="${REPO_REF:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
 VARS_FILE="${JUMP_VARS_FILE:-site.tfvars}"
 SESSION="educates"
 
-# The remote shell expands $HOME; a leading ~ would not survive the quoting.
-D="${JUMP_DIR/#\~/\$HOME}"
+# The remote shell expands $HOME (a leading ~ would not survive the quoting), once, at the
+# start of every command: guest-env.sh changes HOME afterwards.
+JD_INIT="JD=\"${JUMP_DIR/#\~/\$HOME}\""
+D='$JD'
 MOD="$D/repo/$MODULE_PATH"
-LOAD_ENV="set -a; . \"$D/proxmox.env\"; set +a"
+# Every command on the jump host runs with scripts/guest-env.sh: HOME inside the work
+# directory, so nothing is written to the jump host user's home.
+LOAD_ENV=". \"$MOD/scripts/guest-env.sh\" \"$D\""
 TF="\$(command -v tofu || command -v terraform)"
 VARS="-var-file=\"$D/$VARS_FILE\" -var=\"client_configs_dir=$D/state\""
 
-remote() { ssh "$JUMP_HOST" "bash -lc '$1'"; }
-remote_tty() { ssh -t "$JUMP_HOST" "bash -lc '$1'"; }
+remote() { ssh "$JUMP_HOST" "bash -lc '$JD_INIT; $1'"; }
+remote_tty() { ssh -t "$JUMP_HOST" "bash -lc '$JD_INIT; $1'"; }
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
@@ -92,7 +99,7 @@ EOF
       git fetch --quiet --tags origin
       git checkout --quiet --detach \"$ref\" 2>/dev/null || git checkout --quiet --detach \"origin/$ref\"
       echo \"Checked out \$(git rev-parse --short HEAD) (\$(git log -1 --format=%s))\"
-      cd \"$MOD\" && $TF init -input=false >/dev/null && echo \"init done\"
+      cd \"$MOD\" && $LOAD_ENV && $TF init -input=false >/dev/null && echo \"init done\"
     "
     ;;
   preflight)
@@ -105,7 +112,7 @@ EOF
     remote_tty "tmux new -A -s $SESSION \"cd $MOD && $LOAD_ENV && $TF apply $D/state/plan.out; rm -f $D/state/plan.out; exec bash\""
     ;;
   shell)
-    remote_tty "tmux new -A -s $SESSION-shell \"cd $MOD && $LOAD_ENV && export PATH=$D/bin:\\\$PATH KUBECONFIG=\$(ls $D/state/kubeconfig-*.yaml 2>/dev/null | head -n1) TALOSCONFIG=\$(ls $D/state/talosconfig-* 2>/dev/null | head -n1) && exec bash\""
+    remote_tty "tmux new -A -s $SESSION-shell \"cd $MOD && $LOAD_ENV && exec bash\""
     ;;
   ssh)
     exec ssh -t "$JUMP_HOST"
