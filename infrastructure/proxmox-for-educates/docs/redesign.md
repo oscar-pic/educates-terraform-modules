@@ -166,6 +166,10 @@ Fixes the deployment needed, all in the module now:
   - The Envoy Service gets the first free IP of the pool, so it has to be pinned by hand (`lbipam.cilium.io/ips`) when the wildcard record points to a fixed IP. Educates 4 has no setting for Envoy Service annotations yet. A generic annotations map would cover every IPAM (Cilium, MetalLB, kube-vip) and cloud options.
   - With Gateway API, `Gateway.spec.addresses` and `Gateway.spec.infrastructure.annotations` cover the same need.
   - The alternative is to let Educates write the record (bundled external-dns). It only supports Route53 and Cloud DNS so far; on-premises DNS (RFC2136, PowerDNS…) would need more providers.
+- **Educates workshop NetworkPolicy on Cilium**, to report to the Educates team:
+  - The policy (`ipBlock 0.0.0.0/0 except` the metadata IP) blocks in-cluster egress on Cilium, which applies `ipBlock` only to traffic leaving the cluster. That includes GKE Dataplane V2, which is Cilium.
+  - `blockedCidrs: []` cannot switch it off.
+  - The module works around it with a Cilium policy (`45-educates-compat.tf`, `educates_workshop_egress_fix`). Remove it once Educates fixes this, for example by adding an in-cluster `namespaceSelector: {}` egress rule, or by honouring an empty list.
 - The Educates operator pod triggers a Pod Security `restricted` warning on Talos: it lacks `seccompProfile: RuntimeDefault`. It is only a warning, not blocking. To report to the Educates team.
 - The Talos health check reports a healthy cluster before every node is `Ready` with its CNI. Consider an extra readiness gate before the cluster services, beyond the retries.
 

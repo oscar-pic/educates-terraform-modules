@@ -105,3 +105,9 @@ variable "client_configs_dir" {
   type        = string
   default     = null
 }
+
+variable "educates_workshop_egress_fix" {
+  description = "Cilium policy so Educates workshop pods can reach cluster DNS, services and the API. See infrastructure/proxmox-for-educates."
+  type        = bool
+  default     = true
+}

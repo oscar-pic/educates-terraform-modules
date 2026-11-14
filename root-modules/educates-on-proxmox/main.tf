@@ -45,6 +45,8 @@ module "cluster" {
   ceph_csi                 = local.ceph_csi
   ceph_csi_user_key        = var.ceph_csi_user_key
   nfs_csi                  = try(var.storage.nfs_csi, {})
+
+  educates_workshop_egress_fix = var.educates_workshop_egress_fix
 }
 
 resource "local_sensitive_file" "kubeconfig" {

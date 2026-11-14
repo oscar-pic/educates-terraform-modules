@@ -296,3 +296,14 @@ variable "nfs_csi" {
   })
   default = {}
 }
+
+variable "educates_workshop_egress_fix" {
+  description = <<-EOT
+    Add a Cilium policy that lets Educates workshop pods reach cluster DNS, services and the
+    Kubernetes API. Without it, the egress NetworkPolicy that Educates puts in workshop
+    namespaces blocks that traffic on Cilium (see 45-educates-compat.tf). Temporary: turn it
+    off once Educates handles Cilium.
+  EOT
+  type        = bool
+  default     = true
+}

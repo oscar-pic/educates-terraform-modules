@@ -96,6 +96,7 @@ module "cluster" {
 | Proxmox HA resources | Only with `proxmox.ha_enabled` |
 | LoadBalancer IP pool | `CiliumLoadBalancerIPPool` and `CiliumL2AnnouncementPolicy`. Services of type `LoadBalancer` (the Educates ingress or gateway) get an IP from the node network |
 | CSI drivers and StorageClasses | See [Storage](#storage). Applied after the cluster health check |
+| Educates compatibility policy | `educates-allow-in-cluster`, a Cilium policy so Educates workshop pods can reach cluster DNS, services and the API despite the Educates egress NetworkPolicy. Temporary; `educates_workshop_egress_fix = false` turns it off. See [getting-started](docs/getting-started.md#workshop-network-policy-and-cilium-handled-by-the-module) |
 
 Control-plane nodes run workloads when there are no workers. Set `allow_scheduling_on_control_planes` to override this.
 

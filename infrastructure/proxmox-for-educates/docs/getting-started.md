@@ -304,25 +304,18 @@ echo | openssl s_client -connect <any-host>.<domain>:443 -servername <any-host>.
 
 Do the same with `educates-lab-ca` if the root CA changes. Put the renewal in your operations calendar: the certificate's `notAfter` date tells you when.
 
-### Known issue: workshops cannot reach the cluster (Cilium)
+### Workshop network policy and Cilium (handled by the module)
 
-Educates puts a NetworkPolicy in every workshop namespace. It means "allow all egress except the cloud metadata IP" (`ipBlock 0.0.0.0/0 except 169.254.169.254/32`). Cilium applies `ipBlock` only to traffic leaving the cluster, so on this cluster that policy also blocks workshop pods from cluster DNS, services and the Kubernetes API. Workshop sessions then fail to start, or fail to log in ("Authentication failed"). Setting `sessionManager.network.blockedCidrs: []` does not help: Educates 4 treats an empty list as unset and falls back to the defaults.
+Educates puts a NetworkPolicy in every workshop namespace. It means "allow all egress except the cloud metadata IP" (`ipBlock 0.0.0.0/0 except 169.254.169.254/32`). Cilium applies `ipBlock` only to traffic leaving the cluster, so that policy alone would also block workshop pods from cluster DNS, services and the Kubernetes API. Workshop sessions would then fail to start, or fail to log in ("Authentication failed"). Educates 4 cannot switch it off: `sessionManager.network.blockedCidrs: []` is treated as unset.
 
-Until Educates handles it, add this Cilium policy. Cilium policies add up, so workshop pods get what Educates intends: everything except the metadata IP.
+The module therefore adds a Cilium policy, `educates-allow-in-cluster`, that gives in-cluster egress to the pods of Educates workshop namespaces. Cilium policies add up, so workshop pods get what Educates intends: everything except the metadata IP. It is on by default (`educates_workshop_egress_fix = true`). Turn it off once Educates handles Cilium.
 
-```yaml
-apiVersion: cilium.io/v2
-kind: CiliumClusterwideNetworkPolicy
-metadata:
-  name: educates-allow-in-cluster
-spec:
-  endpointSelector:
-    matchExpressions:
-    - key: io.cilium.k8s.namespace.labels.training.educates.dev/component
-      operator: In
-      values: [environment, session]
-  egress:
-  - toEntities: [cluster, kube-apiserver]
+Check from a workshop session that the cluster is reachable:
+
+```shell
+kubectl get ciliumclusterwidenetworkpolicy educates-allow-in-cluster
+# in the workshop terminal:
+kubectl get pods
 ```
 
 ### Check with a sample workshop
