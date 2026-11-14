@@ -174,9 +174,27 @@ The cluster built here meets what Educates expects:
 
 Tested with Educates `4.0.0-alpha.13`, installed with its CLI from a jump host.
 
-### Certificates: your own lab CA
+### Certificates
 
-On a private domain, the simplest option is your own CA, trusted by your users' browsers. Use `StaticCertificate`, so the CA private key never enters the cluster: sign a wildcard certificate with the CA, outside the cluster, and give Educates only that certificate and the CA certificate.
+Every workshop session uses several host names under `*.<domain>`. Browsers must **trust** the certificate's CA: accepting a warning on the portal page is not enough, because the session page's background requests (JavaScript, WebSockets) to other host names fail silently, and the session never opens ("Waiting for deployment...", "Authentication failed").
+
+With `StaticCertificate`, Educates serves a wildcard certificate you provide, and the CA private key never enters the cluster. Two ways to get that certificate:
+
+**a) From your organisation's CA (recommended when you have one).** Your users' browsers already trust it, so nobody imports anything. Ask for a server certificate (`serverAuth`) whose SANs are `*.<domain>` and `<domain>`. You need three files:
+
+- the certificate **with its intermediate chain** (leaf first);
+- its private key;
+- the **root** CA certificate.
+
+Check them before use:
+
+```shell
+openssl x509 -in tls.crt -noout -subject -issuer -dates -ext subjectAltName
+[ "$(openssl x509 -in tls.crt -noout -pubkey | openssl sha256)" = "$(openssl pkey -in tls.key -pubout | openssl sha256)" ] && echo "key matches"
+awk '/BEGIN CERT/{n++} n>1' tls.crt > chain.pem && openssl verify -CAfile root-ca.crt -untrusted chain.pem tls.crt
+```
+
+**b) Your own lab CA**, when there is no organisation CA. Your users must then import `ca.crt` into their browser or operating system.
 
 ```shell
 DOMAIN=workshops.example.com
@@ -195,6 +213,8 @@ openssl x509 -req -in wildcard.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha
 rm wildcard.csr wildcard.ext && chmod 644 ca.crt wildcard.crt
 openssl verify -CAfile ca.crt wildcard.crt
 ```
+
+With a lab CA:
 
 - **What each file is for:**
   - `ca.crt` is the file users import into their browser or operating system as a trusted authority;
@@ -244,10 +264,11 @@ sessionManager: {}
 ```
 
 ```shell
-# The Secrets, before deploying: the wildcard certificate and the CA certificate (no CA key).
+# The Secrets, before deploying: the wildcard certificate (with its chain) and the root CA certificate.
+# With a lab CA: --cert=ca/wildcard.crt --key=ca/wildcard.key and ca.crt=ca/ca.crt.
 kubectl create namespace educates-installer
-kubectl -n educates-installer create secret tls educates-wildcard-tls --cert=ca/wildcard.crt --key=ca/wildcard.key
-kubectl -n educates-installer create secret generic educates-lab-ca --from-file=ca.crt=ca/ca.crt
+kubectl -n educates-installer create secret tls educates-wildcard-tls --cert=tls.crt --key=tls.key
+kubectl -n educates-installer create secret generic educates-lab-ca --from-file=ca.crt=root-ca.crt
 
 educates admin platform render --config educates.yaml    # optional: review what will be applied
 educates admin platform deploy --config educates.yaml    # about 5 minutes
@@ -268,12 +289,51 @@ The IP must be inside `load_balancer.ip_pools`. The annotation survives the reco
 
 Educates 4 has no setting yet for Envoy Service annotations. Its bundled external-dns, which would write the record itself, only supports Route53 and Cloud DNS so far.
 
+### Renewing the certificate
+
+`StaticCertificate` does not renew anything. When the certificate is renewed (by your CA's tooling, or by you), update the Secret. Educates propagates it by itself to the namespaces that use it (portal, workshop environments), with no redeploy:
+
+```shell
+kubectl -n educates-installer create secret tls educates-wildcard-tls --cert=tls.crt --key=tls.key \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Check what the ingress serves (a minute or two later):
+echo | openssl s_client -connect <any-host>.<domain>:443 -servername <any-host>.<domain> 2>/dev/null \
+  | openssl x509 -noout -issuer -enddate
+```
+
+Do the same with `educates-lab-ca` if the root CA changes. Put the renewal in your operations calendar: the certificate's `notAfter` date tells you when.
+
+### Known issue: workshops cannot reach the cluster (Cilium)
+
+Educates puts a NetworkPolicy in every workshop namespace. It means "allow all egress except the cloud metadata IP" (`ipBlock 0.0.0.0/0 except 169.254.169.254/32`). Cilium applies `ipBlock` only to traffic leaving the cluster, so on this cluster that policy also blocks workshop pods from cluster DNS, services and the Kubernetes API. Workshop sessions then fail to start, or fail to log in ("Authentication failed"). Setting `sessionManager.network.blockedCidrs: []` does not help: Educates 4 treats an empty list as unset and falls back to the defaults.
+
+Until Educates handles it, add this Cilium policy. Cilium policies add up, so workshop pods get what Educates intends: everything except the metadata IP.
+
+```yaml
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: educates-allow-in-cluster
+spec:
+  endpointSelector:
+    matchExpressions:
+    - key: io.cilium.k8s.namespace.labels.training.educates.dev/component
+      operator: In
+      values: [environment, session]
+  egress:
+  - toEntities: [cluster, kube-apiserver]
+```
+
 ### Check with a sample workshop
 
 ```shell
-educates deploy-workshop -f https://github.com/educates/lab-k8s-fundamentals/releases/latest/download/workshop.yaml
+# --reserved 1 keeps a session started in advance; --overdue raises the startup timeout (2m by
+# default), which the first session on a node can exceed while it pulls the 1.3 GB workshop image.
+educates deploy-workshop -f https://github.com/educates/lab-k8s-fundamentals/releases/latest/download/workshop.yaml \
+  --reserved 1 --overdue 10m
 educates view-credentials        # portal URL and password
-curl --cacert ca/ca.crt -s -o /dev/null -w "%{http_code}\n" https://educates-cli-ui.<domain>/   # 302 (login): TLS OK
+curl --cacert root-ca.crt -s -o /dev/null -w "%{http_code}\n" https://educates-cli-ui.<domain>/   # 302 (login): TLS OK
 ```
 
 Open the portal URL in a browser that trusts `ca.crt`, and start the workshop. To remove the sample: `educates delete-workshop`, then `educates delete-portal`.
