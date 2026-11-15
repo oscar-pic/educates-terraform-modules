@@ -45,11 +45,11 @@ Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` 
 
 | Path | Privileges | Why |
 |---|---|---|
-| `/pool/<pool>` (with `proxmox.pool`), or `/vms/<id>` for each VM ID | Role `PVEVMAdmin` | Create and manage the VMs. A pool avoids one ACL per VM ID |
+| `/pool/<pool>` (with `proxmox.pool`, recommended), or `/vms/<id>` for each VM ID | Role `PVEVMAdmin` | Create and manage the VMs. **Proxmox deletes the ACLs of `/vms/<id>` when it destroys the VM**: after a destroy, per-ID privileges are gone and must be granted again. ACLs on the pool survive, and Proxmox accepts creating a VM in the pool with `VM.Allocate` on the pool |
 | `/pool/<pool>`, only with `proxmox.pool` | Role `PVEPoolAdmin` (`Pool.Allocate`, `Pool.Audit`) | Put the VMs in the pool and read it. Nothing on the parent pools. With `proxmox.create_pool`, the pool does not exist yet: grant it on the parent instead (`/pool/lab` for `lab/educates`), which propagates |
 | `/storage/<vm-datastore>` | `Datastore.AllocateSpace`, `Datastore.Audit` | VM disks, EFI disks, cloud-init drives |
 | `/storage/<image-datastore>` | `Datastore.AllocateTemplate`, `Datastore.AllocateSpace`, `Datastore.Audit`, `Datastore.Allocate` | Download and import the Talos image, and **delete** it when a Talos upgrade replaces it or the cluster is destroyed. On a shared datastore, `Datastore.Allocate` also allows deleting other files there. Without it, those deletions fail with HTTP 403: drop the image from the state (`tofu state rm 'module.cluster.proxmox_download_file.talos["<node>"]'`) and let the Proxmox administrator delete the file |
-| `/nodes/<node>` for each node that downloads the image | `Sys.AccessNetwork`, `Sys.Audit` | Download from a URL. This lets the host fetch any URL it can reach. With a shared image datastore only one node downloads: the first, in alphabetical order, of the Proxmox nodes that host VMs. Otherwise every node that hosts a VM downloads |
+| `/nodes/<node>` for each node that downloads the image | `Sys.AccessNetwork`, `Sys.Audit` | Download from a URL. This lets the host fetch any URL it can reach. With a shared image datastore, one node downloads: `proxmox.image_download_node`, or else the first, in alphabetical order, of the Proxmox nodes that host VMs (which changes with the topology). Otherwise every node that hosts a VM downloads |
 | `/sdn/zones/localnetwork/<bridge>` (plain Linux bridge), or `/sdn/zones/<zone>/<vnet>` (SDN VNet) | `SDN.Use` (role `PVESDNUser`) | Attach the NICs. Needed for every bridge used, including the storage network. Since Proxmox VE 8, plain bridges need it too |
 | `/` | `Sys.Audit`, `Sys.Console` | Only with `proxmox.ha_enabled`: creating HA resources |
 
@@ -83,7 +83,7 @@ grant /                                 EducatesHA                       # only 
 
 A privilege-separated token (`--privsep 1`) gets the intersection of its own ACLs and its user's. So grant every ACL to both, as `grant` does. If one user holds several tokens, the user needs the union of what they need.
 
-**2. Token for Proxmox CSI.** The cluster uses it to create and attach volumes. It needs `VM.Audit` and `VM.Config.Disk` on the cluster's VMs (the pool), and `Datastore.Allocate`, `Datastore.AllocateSpace` and `Datastore.Audit` on the volume datastore. See the [module README](../README.md#proxmox-csi-token).
+**2. Token for Proxmox CSI.** The cluster uses it to create and attach volumes. It needs `VM.Audit` and `VM.Config.Disk` on the cluster's VMs (grant them on the pool: ACLs on `/vms/<id>` disappear when the VMs are destroyed), and `Datastore.Allocate`, `Datastore.AllocateSpace` and `Datastore.Audit` on the volume datastore. See the [module README](../README.md#proxmox-csi-token).
 
 No SSH access to the Proxmox hosts is needed.
 

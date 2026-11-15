@@ -30,7 +30,7 @@ locals {
 
   # Proxmox nodes that need their own copy of the Talos image.
   proxmox_nodes = sort(distinct([for n in values(var.nodes) : n.proxmox_node]))
-  image_nodes   = var.proxmox.image_datastore_shared ? [local.proxmox_nodes[0]] : local.proxmox_nodes
+  image_nodes   = var.proxmox.image_datastore_shared ? [coalesce(var.proxmox.image_download_node, local.proxmox_nodes[0])] : local.proxmox_nodes
 
   gateway_api_crds_url = coalesce(
     var.gateway_api.crds_url,

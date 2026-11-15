@@ -425,7 +425,12 @@ if $PVE_OK; then
     warn "image datastore /storage/$IMG_DS: no Datastore.Allocate, so Talos upgrades and destroy cannot delete the old image (see requirements.md)"
   fi
 
-  if [ "$IMG_SHARED" = "true" ]; then DL_NODES="$(echo "$PVE_NODES" | head -n1)"; else DL_NODES="$PVE_NODES"; fi
+  if [ "$IMG_SHARED" = "true" ]; then
+    DL_NODES="$(cfg '.proxmox.image_download_node // empty')"
+    [ -n "$DL_NODES" ] || DL_NODES="$(echo "$PVE_NODES" | head -n1)"
+  else
+    DL_NODES="$PVE_NODES"
+  fi
   for n in $DL_NODES; do
     if has_privs "$TOKEN" "/nodes/$n" Sys.AccessNetwork || has_privs "$TOKEN" "/" Sys.Audit Sys.Modify; then
       pass "image download: /nodes/$n"

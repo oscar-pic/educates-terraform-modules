@@ -15,6 +15,9 @@ variable "proxmox" {
     - vm_datastore: datastore for VM disks, EFI disks and cloud-init drives.
     - image_datastore: datastore for the Talos disk image. It must allow the 'import' content type (PVE >= 8.4).
     - image_datastore_shared: true if image_datastore is shared by all Proxmox nodes (the image is then downloaded once).
+    - image_download_node: with a shared image datastore, the Proxmox node that downloads the image (it needs
+      Sys.AccessNetwork). Defaults to the first, alphabetically, of the nodes that host VMs, which changes
+      when the topology does; set it to keep one node and avoid a new download.
     - cpu_type: QEMU CPU type. 'host' gives the best performance but blocks live migration between different CPUs.
     - ha_enabled: register the VMs as Proxmox HA resources. Needs a Proxmox cluster and shared VM storage.
     - tags: extra Proxmox tags for every VM.
@@ -31,6 +34,7 @@ variable "proxmox" {
     vm_datastore           = optional(string, "local-lvm")
     image_datastore        = optional(string, "local")
     image_datastore_shared = optional(bool, false)
+    image_download_node    = optional(string)
     cpu_type               = optional(string, "x86-64-v2-AES")
     ha_enabled             = optional(bool, false)
     tags                   = optional(list(string), [])
