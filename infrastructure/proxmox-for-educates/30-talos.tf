@@ -166,7 +166,10 @@ data "talos_cluster_health" "this" {
     read = var.health_check_timeout
   }
 
-  depends_on = [talos_cluster.this]
+  # Wait for every node's configuration, not only the bootstrap. Otherwise adding a worker
+  # (no change to talos_cluster) reads this during plan, and it waits for a node that does
+  # not exist yet until it times out.
+  depends_on = [talos_cluster.this, talos_machine.node]
 }
 
 data "talos_client_configuration" "this" {
