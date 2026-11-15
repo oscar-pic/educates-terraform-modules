@@ -385,6 +385,29 @@ if $PVE_OK; then
     done
   fi
 
+  # ceph-csi 3.18 and later need x86-64-v3 (AVX2) CPUs.
+  if [ "$(cfg '.storage.ceph_csi.enabled // false')" = "true" ]; then
+    CEPH_V="$(cfg '.storage.ceph_csi.version // "3.18.2"')"
+    CPU_T="$(cfg '.proxmox.cpu_type // "x86-64-v2-AES"')"
+    if version_ge "$CEPH_V" "3.18.0"; then
+      case "$CPU_T" in
+        x86-64-v3*|x86-64-v4*) pass "ceph-csi $CEPH_V with cpu_type $CPU_T (x86-64-v3 needed)" ;;
+        host|max)
+          NO_AVX2=""
+          for n in $PVE_NODES; do
+            if api "$TOKEN" "/nodes/$n/status"; then
+              jq -r '.data.cpuinfo.flags // ""' "$TMP/api.json" | tr ' ' '\n' | grep -qx avx2 || NO_AVX2="$NO_AVX2 $n"
+            fi
+          done
+          [ -z "$NO_AVX2" ] && pass "ceph-csi $CEPH_V with cpu_type $CPU_T" \
+            || fail "ceph-csi $CEPH_V needs x86-64-v3 (AVX2), missing on:$NO_AVX2. Use ceph_csi.version 3.17.x" ;;
+        *) fail "ceph-csi $CEPH_V needs x86-64-v3 CPUs (AVX2), but cpu_type is $CPU_T: set ceph_csi.version = \"3.17.2\" (or a v3 cpu_type if the hosts support it)" ;;
+      esac
+    else
+      pass "ceph-csi $CEPH_V (runs on x86-64-v2)"
+    fi
+  fi
+
   section "Token permissions (OpenTofu)"
 
   VM_PRIVS="VM.Allocate VM.Audit VM.Config.CDROM VM.Config.CPU VM.Config.Cloudinit VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options VM.PowerMgmt"

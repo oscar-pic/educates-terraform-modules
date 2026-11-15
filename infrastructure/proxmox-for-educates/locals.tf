@@ -65,9 +65,18 @@ locals {
     var.nfs_csi.enabled ? "csi-nfs" : "",
   ]))
 
-  ceph_csi_config = [{
-    clusterID = var.ceph_csi.cluster_id
-    monitors  = var.ceph_csi.monitors
-    cephFS    = { subvolumeGroup = var.ceph_csi.cephfs.subvolume_group }
-  }]
+  ceph_csi_config = [merge(
+    {
+      clusterID = var.ceph_csi.cluster_id
+      monitors  = var.ceph_csi.monitors
+      cephFS    = { subvolumeGroup = var.ceph_csi.cephfs.subvolume_group }
+    },
+    var.ceph_csi.rbd.rados_namespace == "" ? {} : { rbd = { radosNamespace = var.ceph_csi.rbd.rados_namespace } },
+  )]
+
+  # One Ceph client for both drivers, or one per driver.
+  ceph_rbd_user_id  = coalesce(var.ceph_csi.rbd.user_id, var.ceph_csi.user_id)
+  ceph_rbd_user_key = var.ceph_csi_rbd_user_key != "" ? var.ceph_csi_rbd_user_key : var.ceph_csi_user_key
+  ceph_fs_user_id   = coalesce(var.ceph_csi.cephfs.user_id, var.ceph_csi.user_id)
+  ceph_fs_user_key  = var.ceph_csi_cephfs_user_key != "" ? var.ceph_csi_cephfs_user_key : var.ceph_csi_user_key
 }

@@ -94,6 +94,20 @@ variable "ceph_csi_user_key" {
   sensitive   = true
 }
 
+variable "ceph_csi_rbd_user_key" {
+  description = "Key of the RBD Ceph client, when RBD has its own (TF_VAR_ceph_csi_rbd_user_key)."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "ceph_csi_cephfs_user_key" {
+  description = "Key of the CephFS Ceph client, when CephFS has its own (TF_VAR_ceph_csi_cephfs_user_key)."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "write_client_configs" {
   description = "Write kubeconfig and talosconfig files (mode 0600) to client_configs_dir."
   type        = bool

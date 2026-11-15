@@ -145,7 +145,7 @@ Proxmox VE 9.2, three hosts, SDN VXLAN VNet, 1 control-plane node and 2 workers,
 Verified:
 
 - The minimal token privileges. They are now in [requirements.md](requirements.md#credentials).
-- CPU baseline `x86-64-v2-AES` on x86-64-v2 hosts: Talos, Cilium and Proxmox CSI run.
+- CPU baseline `x86-64-v2-AES` on x86-64-v2 hosts: Talos, Cilium, Proxmox CSI and Educates run. ceph-csi 3.18 and later do not: they need x86-64-v3 (AVX2), so x86-64-v2 sites use 3.17.x. preflight.sh checks it.
 - PVC deletion with `reclaimPolicy: Delete` removes the Proxmox disk.
 - The Educates operator on Talos with the bundled Kyverno and Contour, with the Envoy `LoadBalancer` Service on a Cilium L2 IP.
 - MTU on an SDN VNet with `network.mtu = 1`: the VMs inherit the VNet MTU.

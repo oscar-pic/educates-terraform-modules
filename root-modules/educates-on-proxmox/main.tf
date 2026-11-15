@@ -2,6 +2,9 @@ locals {
   proxmox_csi = try(var.storage.proxmox_csi, {})
   ceph_csi    = try(var.storage.ceph_csi, {})
   ceph_rbd    = try(local.ceph_csi.enabled, false) && try(local.ceph_csi.rbd.enabled, true)
+  ceph_fs     = try(local.ceph_csi.enabled, false) && try(local.ceph_csi.cephfs.enabled, false)
+  # Kernel clients: RBD needs rbd (+ libceph), the CephFS kernel mounter needs ceph (+ libceph).
+  ceph_kernel_modules = concat(local.ceph_rbd ? ["rbd", "libceph"] : [], local.ceph_fs ? ["ceph", "libceph"] : [])
 
   client_configs_dir = trimsuffix(coalesce(var.client_configs_dir, path.root), "/")
 }
@@ -20,9 +23,9 @@ module "cluster" {
 
   cluster_name = var.cluster_name
   proxmox      = var.proxmox
-  # RBD volumes need the rbd kernel module on every node.
+  # Ceph volumes need their kernel modules on every node.
   talos = merge(var.talos, {
-    kernel_modules = distinct(concat(try(var.talos.kernel_modules, []), local.ceph_rbd ? ["rbd", "libceph"] : []))
+    kernel_modules = distinct(concat(try(var.talos.kernel_modules, []), local.ceph_kernel_modules))
   })
   network                            = var.network
   storage_network                    = var.storage_network
@@ -44,6 +47,8 @@ module "cluster" {
   proxmox_csi_token_secret = var.proxmox_csi_token_secret
   ceph_csi                 = local.ceph_csi
   ceph_csi_user_key        = var.ceph_csi_user_key
+  ceph_csi_rbd_user_key    = var.ceph_csi_rbd_user_key
+  ceph_csi_cephfs_user_key = var.ceph_csi_cephfs_user_key
   nfs_csi                  = try(var.storage.nfs_csi, {})
 
   educates_workshop_egress_fix = var.educates_workshop_egress_fix

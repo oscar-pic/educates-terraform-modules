@@ -21,7 +21,7 @@ What you need before deploying Educates on Proxmox VE with these modules. Gather
 - **A VM datastore** for VM disks, EFI disks and cloud-init drives. With Proxmox HA it must be shared (Ceph RBD, NFS, iSCSI…).
 - **A resource pool** (recommended) for the cluster's VMs, created by the Proxmox administrator. Its name is an input, for example `educates` or, nested, `lab/educates`. See [Resource pool](#credentials).
 - **Proxmox HA** (optional): an existing Proxmox cluster with quorum. The VMs must use shared storage to move between hosts.
-- **CPU.** VMs use `x86-64-v2-AES` by default. With `host`, live migration only works between identical CPUs.
+- **CPU.** VMs use `x86-64-v2-AES` by default. With `host`, live migration only works between identical CPUs. Talos, Cilium, Proxmox CSI and Educates run on x86-64-v2. **ceph-csi 3.18 and later need x86-64-v3 (AVX2)**: on older CPUs, use ceph-csi 3.17.x.
 
 ## Sizing
 
@@ -96,7 +96,7 @@ No SSH access to the Proxmox hosts is needed.
 | One IP per Talos node | In the node subnet |
 | One IP for the Kubernetes API VIP | Required with more than one control-plane node |
 | A range of free IPs for LoadBalancer Services | 5–10 addresses in the node subnet, outside any DHCP range. The Educates ingress uses one |
-| Storage network (optional) | Bridge and subnet for a second NIC, for example to reach Ceph |
+| Storage network (optional) | Bridge and subnet for a second NIC, for example to reach Ceph, and one IP per node in it. No gateway needed. The token needs `SDN.Use` on that bridge too. The VMs inherit the bridge MTU |
 
 The API VIP and the LoadBalancer IPs are announced with ARP. They must be in the same layer-2 network as the nodes, and the network must not block gratuitous ARP.
 
@@ -253,7 +253,7 @@ Choose at least one backend, and make one StorageClass the default. Educates nee
 | Backend | Needs |
 |---|---|
 | Proxmox CSI (RWO, recommended) | The CSI token and a Proxmox datastore for the volumes (any type) |
-| Ceph CSI, RBD (RWO) and/or CephFS (RWX) | Ceph FSID, monitor addresses reachable from the nodes, a Ceph client and its key, an RBD pool and/or a CephFS file system |
+| Ceph CSI, RBD (RWO) and/or CephFS (RWX) | Ceph FSID and monitor addresses reachable from the nodes (TCP 3300, 6789, 6800–7300). An RBD pool (optionally a RADOS namespace in it), and/or a CephFS file system with a subvolume group (optionally a dedicated data pool). One Ceph client for both, or one per driver, with the [capabilities ceph-csi needs](../README.md#ceph-csi), and their keys. ceph-csi 3.17.x on x86-64-v2 CPUs |
 | NFS CSI (RWX) | An NFS export reachable from the nodes. Not regularly tested by Educates |
 
 ## Using Educates

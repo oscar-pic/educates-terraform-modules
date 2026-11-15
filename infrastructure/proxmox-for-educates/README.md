@@ -137,17 +137,32 @@ Caveats:
 
 ### Ceph CSI
 
-- **Ceph client.** Create a client for Kubernetes on the Ceph cluster, for example on a Proxmox node:
+- **Version and CPU.** ceph-csi 3.18 and later need x86-64-v3 CPUs (AVX2). On x86-64-v2 hosts, or with the default `proxmox.cpu_type` (`x86-64-v2-AES`), set `ceph_csi.version = "3.17.2"`. `scripts/preflight.sh` checks it.
+- **Ceph clients.** One client for both drivers (`ceph_csi.user_id`, key in `ceph_csi_user_key`), or one per driver (`rbd.user_id` and `cephfs.user_id`, keys in `ceph_csi_rbd_user_key` and `ceph_csi_cephfs_user_key`). Create them on the Ceph cluster, for example on a Proxmox node. Capabilities, from the [ceph-csi documentation](https://github.com/ceph/ceph-csi/blob/devel/docs/capabilities.md):
 
   ```shell
-  ceph auth get-or-create client.kubernetes \
-    mon 'profile rbd, allow r' osd 'profile rbd pool=kubernetes' mgr 'profile rbd pool=kubernetes'    # RBD
-  ceph fs subvolumegroup create cephfs csi                                                           # CephFS
+  # RBD, pool k8s, optionally restricted to a RADOS namespace (rbd namespace create k8s/educates):
+  ceph auth get-or-create client.educates-rbd \
+    mon 'profile rbd' \
+    osd 'profile rbd pool=k8s namespace=educates' \
+    mgr 'profile rbd pool=k8s namespace=educates'
+
+  # CephFS cephfs, subvolume group educates (ceph fs subvolumegroup create cephfs educates),
+  # optionally with its data in a dedicated pool added to the file system (ceph fs add_data_pool):
+  ceph auth get-or-create client.educates-cephfs \
+    mon 'allow r fsname=cephfs' \
+    mgr 'allow rw' \
+    mds 'allow r fsname=cephfs path=/volumes, allow rws fsname=cephfs path=/volumes/educates' \
+    osd 'allow rw pool=cephfs-educates, allow rwx tag cephfs metadata=cephfs'
   ```
 
-  For CephFS the client also needs `mds` and `osd` rights on the file system. See the [ceph-csi capabilities](https://github.com/ceph/ceph-csi/blob/devel/docs/capabilities.md).
-- **Key.** Pass the key (`ceph auth get-key client.kubernetes`) as `ceph_csi_user_key`.
-- **Kernel modules.** RBD needs the `rbd` and `libceph` kernel modules on the nodes. Add them to `talos.kernel_modules`. The `educates-on-proxmox` root module does it when RBD is enabled.
+  ceph-csi creates CephFS subvolumes through the manager's `volumes` module, so the CephFS client needs `mgr 'allow rw'` and read access to `/volumes`. Restricting it to its own subvolume group alone breaks provisioning.
+- **Settings.**
+  - `rbd.pool`, and `rbd.rados_namespace` for a RADOS namespace;
+  - `cephfs.fs_name` and `cephfs.subvolume_group`, and `cephfs.data_pool` for a dedicated data pool.
+- **Keys.** `ceph auth get-key client.<name>`, passed as `TF_VAR_*` variables (see `proxmox.env.example`).
+- **Storage network.** If Ceph is on its own network, give the VMs a second NIC with `storage_network` and a `storage_ip` per node. Its MTU is inherited from the bridge by default (`mtu = 1`).
+- **Kernel modules.** RBD needs `rbd` and `libceph`, and the CephFS kernel mounter needs `ceph` and `libceph`. The `educates-on-proxmox` root module adds them to `talos.kernel_modules` when RBD or CephFS is enabled. Adding them to running nodes needs a reboot of each node: do it one node at a time (see [docs/upgrades.md](docs/upgrades.md)).
 
 ## Things to know
 

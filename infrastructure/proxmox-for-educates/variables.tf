@@ -108,7 +108,7 @@ variable "storage_network" {
     cidr      = string
     bridge    = string
     vlan_id   = optional(number)
-    mtu       = optional(number, 9000)
+    mtu       = optional(number, 1) # 1 = inherit the bridge MTU (set 9000 only if the bridge has it)
     interface = optional(string, "eth1")
   })
   default = null
@@ -268,9 +268,14 @@ variable "ceph_csi" {
     Ceph CSI against an existing Ceph cluster (for example the one of Proxmox).
     - cluster_id: Ceph FSID ('ceph fsid').
     - monitors: monitor addresses ("10.10.10.1:6789").
-    - user_id: Ceph client without the 'client.' prefix. Its key goes in ceph_csi_user_key.
-    - rbd: RWO block volumes from an RBD pool. Needs the 'rbd' kernel module on the nodes.
-    - cephfs: RWX volumes from a CephFS file system.
+    - version: ceph-csi chart and images. 3.18 and later need x86-64-v3 CPUs (AVX2): with
+      x86-64-v2 hosts or proxmox.cpu_type, use 3.17.x (for example "3.17.2").
+    - user_id: Ceph client without the 'client.' prefix, for both drivers. Its key goes in
+      ceph_csi_user_key. rbd.user_id and cephfs.user_id override it, each with its own key.
+    - rbd: RWO block volumes from an RBD pool, optionally in a RADOS namespace (rados_namespace).
+      Needs the 'rbd' kernel module on the nodes.
+    - cephfs: RWX volumes from a CephFS file system, in a subvolume group, optionally with their
+      data in a dedicated data pool (data_pool) added to the file system. Needs the 'ceph' kernel module.
   EOT
   type = object({
     enabled    = optional(bool, false)
@@ -279,14 +284,18 @@ variable "ceph_csi" {
     monitors   = optional(list(string), [])
     user_id    = optional(string, "kubernetes")
     rbd = optional(object({
-      enabled       = optional(bool, true)
-      pool          = optional(string, "kubernetes")
-      storage_class = optional(string, "ceph-rbd")
+      enabled         = optional(bool, true)
+      pool            = optional(string, "kubernetes")
+      rados_namespace = optional(string, "")
+      user_id         = optional(string)
+      storage_class   = optional(string, "ceph-rbd")
     }), {})
     cephfs = optional(object({
       enabled         = optional(bool, false)
       fs_name         = optional(string, "cephfs")
       subvolume_group = optional(string, "csi")
+      data_pool       = optional(string, "")
+      user_id         = optional(string)
       storage_class   = optional(string, "cephfs")
     }), {})
   })
@@ -295,6 +304,20 @@ variable "ceph_csi" {
 
 variable "ceph_csi_user_key" {
   description = "Ceph auth key of ceph_csi.user_id ('ceph auth get-key client.<user_id>')."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "ceph_csi_rbd_user_key" {
+  description = "Key of ceph_csi.rbd.user_id, when RBD has its own Ceph client. Defaults to ceph_csi_user_key."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "ceph_csi_cephfs_user_key" {
+  description = "Key of ceph_csi.cephfs.user_id, when CephFS has its own Ceph client. Defaults to ceph_csi_user_key."
   type        = string
   default     = ""
   sensitive   = true

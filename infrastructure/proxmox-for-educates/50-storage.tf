@@ -98,7 +98,7 @@ resource "helm_release" "ceph_rbd" {
   values = [yamlencode({
     csiConfig   = local.ceph_csi_config
     provisioner = { replicaCount = local.replicas }
-    secret      = { create = true, userID = var.ceph_csi.user_id }
+    secret      = { create = true, userID = local.ceph_rbd_user_id }
     storageClass = {
       create      = true
       name        = var.ceph_csi.rbd.storage_class
@@ -110,15 +110,15 @@ resource "helm_release" "ceph_rbd" {
 
   set_sensitive = [{
     name  = "secret.userKey"
-    value = var.ceph_csi_user_key
+    value = local.ceph_rbd_user_key
   }]
 
   depends_on = [kubectl_manifest.namespace]
 
   lifecycle {
     precondition {
-      condition     = var.ceph_csi.cluster_id != "" && length(var.ceph_csi.monitors) > 0 && var.ceph_csi_user_key != ""
-      error_message = "ceph_csi needs cluster_id, monitors and ceph_csi_user_key."
+      condition     = var.ceph_csi.cluster_id != "" && length(var.ceph_csi.monitors) > 0 && local.ceph_rbd_user_key != ""
+      error_message = "ceph_csi RBD needs cluster_id, monitors and a key (ceph_csi_rbd_user_key or ceph_csi_user_key)."
     }
   }
 }
@@ -135,27 +135,28 @@ resource "helm_release" "ceph_fs" {
   values = [yamlencode({
     csiConfig   = local.ceph_csi_config
     provisioner = { replicaCount = local.replicas }
-    secret      = { create = true, userID = var.ceph_csi.user_id }
+    secret      = { create = true, userID = local.ceph_fs_user_id }
     storageClass = {
       create      = true
       name        = var.ceph_csi.cephfs.storage_class
       clusterID   = var.ceph_csi.cluster_id
       fsName      = var.ceph_csi.cephfs.fs_name
+      pool        = var.ceph_csi.cephfs.data_pool # "" = the file system's default data pool
       annotations = local.default_annotation[var.ceph_csi.cephfs.storage_class]
     }
   })]
 
   set_sensitive = [{
     name  = "secret.userKey"
-    value = var.ceph_csi_user_key
+    value = local.ceph_fs_user_key
   }]
 
   depends_on = [kubectl_manifest.namespace]
 
   lifecycle {
     precondition {
-      condition     = var.ceph_csi.cluster_id != "" && length(var.ceph_csi.monitors) > 0 && var.ceph_csi_user_key != ""
-      error_message = "ceph_csi needs cluster_id, monitors and ceph_csi_user_key."
+      condition     = var.ceph_csi.cluster_id != "" && length(var.ceph_csi.monitors) > 0 && local.ceph_fs_user_key != ""
+      error_message = "ceph_csi CephFS needs cluster_id, monitors and a key (ceph_csi_cephfs_user_key or ceph_csi_user_key)."
     }
   }
 }
