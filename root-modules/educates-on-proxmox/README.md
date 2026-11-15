@@ -12,7 +12,7 @@ It builds the layer below Educates. Educates itself (Educates 4) is installed af
 cp examples/single-host.tfvars.example my-cluster.tfvars     # edit it
 set -a; . ~/educates/proxmox.env; set +a                     # secrets (from proxmox.env.example)
 tofu init && scripts/preflight.sh --var-file my-cluster.tfvars
-tofu plan -var-file=my-cluster.tfvars -out=plan.out && tofu apply plan.out
+tofu plan -var-file=my-cluster.tfvars -out=my-cluster.tfplan && tofu apply my-cluster.tfplan && rm my-cluster.tfplan
 ```
 
 Terraform works as well as OpenTofu.
@@ -46,6 +46,7 @@ The settings of `my-cluster.tfvars`. Each group is documented in [`variables.tf`
 | `network` | Node network: CIDR, gateway, bridge, VLAN, MTU, DNS, API VIP | `network` |
 | `storage_network` | Optional second NIC, for example to reach Ceph | `storage_network` |
 | `nodes` | One entry per VM: role, Proxmox host, VM ID, IP, storage IP, size, labels | `nodes` |
+| `allow_scheduling_on_control_planes` | Run workloads on control-plane nodes (default: only when there are no workers) | `allow_scheduling_on_control_planes` |
 | `load_balancer` | IP ranges for LoadBalancer Services | `load_balancer` |
 | `storage.default_class` | The default StorageClass | `default_storage_class` |
 | `storage.proxmox_csi`, `storage.ceph_csi`, `storage.nfs_csi` | Storage drivers | `proxmox_csi`, `ceph_csi`, `nfs_csi` |
@@ -68,6 +69,7 @@ Secrets come from the environment, never from the tfvars file:
 | `scripts/preflight.sh` | Checks the deploying machine before an apply: tools, Proxmox API, token privileges, datastores, pool, network, internet. `--after`: whether it reaches the cluster |
 | `scripts/e2e-test.sh` | Tests a deployed cluster: storage, LoadBalancer, network, the Educates workshop network and, with `--workshop`, a real Educates session. Deletes what it creates |
 | `scripts/jump-host.sh` | Runs everything on a jump host over SSH (`setup`, `preflight`, `plan`, `apply`, `e2e`, `shell`) |
+| `scripts/guest-env.sh` | Sourced on a jump host: keeps every tool inside the work directory (its own `HOME`), and loads the secrets, `KUBECONFIG` and `TALOSCONFIG` |
 
 Each script describes its options with `--help`.
 

@@ -387,7 +387,8 @@ if $PVE_OK; then
 
   # ceph-csi 3.18 and later need x86-64-v3 (AVX2) CPUs.
   if [ "$(cfg '.storage.ceph_csi.enabled // false')" = "true" ]; then
-    CEPH_V="$(cfg '.storage.ceph_csi.version // "3.18.2"')"
+    CEPH_DEFAULT="$(sed -n '/variable "ceph_csi"/,/^}/s/.*version *= *optional(string, "\([0-9.]*\)").*/\1/p' "$MODULE_VARS" 2>/dev/null | head -n1)"
+    CEPH_V="$(cfg --arg d "${CEPH_DEFAULT:-3.17.2}" '.storage.ceph_csi.version // $d')"
     CPU_T="$(cfg '.proxmox.cpu_type // "x86-64-v2-AES"')"
     if version_ge "$CEPH_V" "3.18.0"; then
       case "$CPU_T" in

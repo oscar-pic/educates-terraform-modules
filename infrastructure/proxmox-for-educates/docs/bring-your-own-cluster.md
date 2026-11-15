@@ -25,7 +25,33 @@ One option is enough, with exactly one StorageClass marked as default (`storagec
 - A dedicated Proxmox token, with the privileges in [Credentials](requirements.md#credentials).
 - The nodes must reach the Proxmox API (TCP 8006).
 - Every node needs the labels `topology.kubernetes.io/region` (the region name in the plugin's configuration) and `topology.kubernetes.io/zone` (the Proxmox host it runs on). In Talos, set them with a `KubeNodeConfig` patch, or `machine.nodeLabels`.
-- Install the chart `oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin` (tested: 0.5.15) in a namespace labelled `pod-security.kubernetes.io/enforce: privileged`, with a StorageClass per datastore. The module's settings are in [`50-storage.tf`](../50-storage.tf).
+- Install the chart `oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin` (tested: 0.5.15) in a namespace labelled `pod-security.kubernetes.io/enforce: privileged`, with a StorageClass per datastore:
+
+```yaml
+# values.yaml (keep the token secret out of git; the module stores it in a Secret instead)
+config:
+  clusters:
+  - url: https://pve.example.com:8006/api2/json   # an address the nodes reach
+    insecure: true                               # self-signed Proxmox certificate
+    token_id: "kubernetes-csi@pve!csi"
+    token_secret: "<secret>"
+    region: pve                                  # = the nodes' topology.kubernetes.io/region label
+storageClass:
+- name: proxmox-local
+  storage: local-lvm                             # the Proxmox datastore for volumes
+  fstype: ext4
+  ssd: true
+  reclaimPolicy: Delete
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+```
+
+```shell
+kubectl create namespace csi-proxmox
+kubectl label namespace csi-proxmox pod-security.kubernetes.io/enforce=privileged
+helm install proxmox-csi-plugin oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin --version 0.5.15 \
+  --namespace csi-proxmox -f values.yaml
+```
 
 **Ceph CSI** ([ceph-csi](https://github.com/ceph/ceph-csi)), with an existing Ceph cluster: RBD for RWO volumes, CephFS for RWX ones.
 
@@ -39,16 +65,19 @@ With Ceph, make RBD the default class: Proxmox CSI is limited to about 30 disks 
 
 ## LoadBalancer IPs
 
-With Cilium, enable L2 announcements, then give it a pool of free IPs in the node network and an announcement policy:
+With Cilium, enable L2 announcements in its Helm values, on top of the Talos defaults (kubeProxyReplacement, KubePrism):
 
 ```yaml
-# Cilium Helm values (on top of the Talos defaults: kubeProxyReplacement, KubePrism)
 l2announcements:
   enabled: true
 k8sClientRateLimit:     # L2 announcements use leases: raise the API rate limits
   qps: 50
   burst: 100
----
+```
+
+Then apply a pool of free IPs in the node network and an announcement policy (`kubectl apply -f`):
+
+```yaml
 apiVersion: cilium.io/v2
 kind: CiliumLoadBalancerIPPool
 metadata:

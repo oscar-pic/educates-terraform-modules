@@ -98,7 +98,7 @@ module "cluster" {
 | Proxmox HA resources | Only with `proxmox.ha_enabled` |
 | LoadBalancer IP pool | `CiliumLoadBalancerIPPool` and `CiliumL2AnnouncementPolicy`. Services of type `LoadBalancer` (the Educates ingress or gateway) get an IP from the node network |
 | CSI drivers and StorageClasses | See [Storage](#storage). Applied after the cluster health check |
-| Educates compatibility policy | `educates-allow-in-cluster`, a Cilium policy so Educates workshop pods can reach cluster DNS, services and the API despite the Educates egress NetworkPolicy. Temporary; `educates_workshop_egress_fix = false` turns it off. See [getting-started](#educates-workshop-network-policy) |
+| Educates compatibility policy | `educates-allow-in-cluster`, a Cilium policy so Educates workshop pods can reach cluster DNS, services and the API despite the Educates egress NetworkPolicy. Temporary; `educates_workshop_egress_fix = false` turns it off. See [Educates workshop network policy](#educates-workshop-network-policy) |
 
 Control-plane nodes run workloads when there are no workers. Set `allow_scheduling_on_control_planes` to override this.
 
@@ -132,31 +132,28 @@ Caveats:
 ### Ceph CSI
 
 - **Version and CPU.** ceph-csi 3.18 and later need x86-64-v3 CPUs (AVX2). On x86-64-v2 hosts, or with the default `proxmox.cpu_type` (`x86-64-v2-AES`), set `ceph_csi.version = "3.17.2"`. `scripts/preflight.sh` checks it.
-- **Ceph clients.** One client for both drivers (`ceph_csi.user_id`, key in `ceph_csi_user_key`), or one per driver (`rbd.user_id` and `cephfs.user_id`, keys in `ceph_csi_rbd_user_key` and `ceph_csi_cephfs_user_key`). Create them on the Ceph cluster, for example on a Proxmox node. Capabilities, from the [ceph-csi documentation](https://github.com/ceph/ceph-csi/blob/devel/docs/capabilities.md):
+- **Pools and Ceph clients.** Create them on the Ceph cluster, for example on a Proxmox node. Capabilities follow the [ceph-csi documentation](https://github.com/ceph/ceph-csi/blob/devel/docs/capabilities.md). The commands below match `examples/ha.tfvars.example`: one client, `kubernetes`, for both drivers, its key in `ceph_csi_user_key`. The CephFS capabilities use tags, so they cover the file system's data pools whatever their names.
 
   ```shell
-  # RBD, pool k8s, optionally restricted to a RADOS namespace (rbd namespace create k8s/educates):
-  ceph auth get-or-create client.educates-rbd \
-    mon 'profile rbd' \
-    osd 'profile rbd pool=k8s namespace=educates' \
-    mgr 'profile rbd pool=k8s namespace=educates'
-
-  # CephFS cephfs, subvolume group educates (ceph fs subvolumegroup create cephfs educates),
-  # optionally with its data in a dedicated pool added to the file system (ceph fs add_data_pool):
-  ceph auth get-or-create client.educates-cephfs \
-    mon 'allow r fsname=cephfs' \
-    mgr 'allow rw' \
-    mds 'allow r fsname=cephfs path=/volumes, allow rws fsname=cephfs path=/volumes/educates' \
-    osd 'allow rw pool=cephfs-educates, allow rwx tag cephfs metadata=cephfs'
+  pveceph pool create kubernetes --application rbd          # RBD pool for RWO volumes
+  ceph fs subvolumegroup create cephfs csi                  # subvolume group for RWX volumes
+  ceph auth get-or-create client.kubernetes \
+    mon 'profile rbd, allow r fsname=cephfs' \
+    mgr 'profile rbd pool=kubernetes, allow rw' \
+    osd 'profile rbd pool=kubernetes, allow rw tag cephfs data=cephfs, allow rwx tag cephfs metadata=cephfs' \
+    mds 'allow r fsname=cephfs path=/volumes, allow rws fsname=cephfs path=/volumes/csi'
+  ceph auth get-key client.kubernetes                       # -> TF_VAR_ceph_csi_user_key
   ```
 
-  ceph-csi creates CephFS subvolumes through the manager's `volumes` module, so the CephFS client needs `mgr 'allow rw'` and read access to `/volumes`. Restricting it to its own subvolume group alone breaks provisioning.
+  **To isolate Kubernetes in a shared Ceph**, use one client per driver (`rbd.user_id`, `cephfs.user_id`, keys in `ceph_csi_rbd_user_key` and `ceph_csi_cephfs_user_key`). Add a RADOS namespace in the RBD pool (`rbd.rados_namespace`; `rbd namespace create <pool>/<namespace>`), and a dedicated CephFS data pool (`cephfs.data_pool`; `ceph fs add_data_pool`). Then narrow the capabilities: `profile rbd pool=<pool> namespace=<namespace>` for RBD, and `allow rw pool=<data pool>` plus the subvolume group path for CephFS.
+
+  ceph-csi creates CephFS subvolumes through the manager's `volumes` module. So the CephFS client always needs `mgr 'allow rw'` and read access to `/volumes`: restricting it to its own subvolume group alone breaks provisioning.
 - **Settings.**
   - `rbd.pool`, and `rbd.rados_namespace` for a RADOS namespace;
   - `cephfs.fs_name` and `cephfs.subvolume_group`, and `cephfs.data_pool` for a dedicated data pool.
 - **Keys.** `ceph auth get-key client.<name>`, passed as `TF_VAR_*` variables (see `proxmox.env.example`).
 - **Storage network.** If Ceph is on its own network, give the VMs a second NIC with `storage_network` and a `storage_ip` per node. Its MTU is inherited from the bridge by default (`mtu = 1`).
-- **Kernel modules.** RBD needs `rbd` and `libceph`, and the CephFS kernel mounter needs `ceph` and `libceph`. The `educates-on-proxmox` root module adds them to `talos.kernel_modules` when RBD or CephFS is enabled. Adding them to running nodes needs a reboot of each node: do it one node at a time (see [docs/operations.md](docs/operations.md)).
+- **Kernel modules.** RBD needs `rbd` and `libceph`, and the CephFS kernel mounter needs `ceph` and `libceph`. The `educates-on-proxmox` root module adds them to `talos.kernel_modules` when RBD or CephFS is enabled. They load live on running nodes, with no reboot.
 
 ## Educates workshop network policy
 

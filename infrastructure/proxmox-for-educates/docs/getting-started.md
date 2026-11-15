@@ -34,13 +34,14 @@ Do this with your Proxmox administrator. The [requirements](requirements.md) hav
   - one for the Talos image, with the `Import` content type enabled (Datacenter → Storage → *datastore* → Content), for example `local`;
   - one for VM disks, for example `local-lvm`.
 - **A resource pool** for the cluster's VMs (`pveum pool add educates`), and a **range of VM IDs** for them.
-- **Two API tokens**, one for OpenTofu and one for Proxmox CSI, with the [privileges in Credentials](requirements.md#credentials), granted on the pool.
+- **Two API tokens**, one for OpenTofu and one for Proxmox CSI, with the [privileges in Credentials](requirements.md#credentials): on the pool, the datastores, the node that downloads the image and the bridge.
 - **Network:**
   - a bridge (for example `vmbr0`), and one free IP per node;
   - with more than one control-plane node, one IP for the Kubernetes API (the VIP);
   - a **range of 5–10 free IPs for LoadBalancer Services**.
 
   All of them in the node network, outside any DHCP range.
+- **DNS and NTP servers** the nodes can use. The DNS must resolve the Proxmox host name in your Proxmox URL: the cluster's storage driver calls the Proxmox API by that name. Set them in your tfvars (`network.dns_servers`, `talos.ntp_servers`): the defaults are public servers.
 - **Outbound access** (or mirrors):
   - from the Proxmox hosts to `factory.talos.dev`;
   - from the nodes to container registries, DNS and NTP;
@@ -96,6 +97,10 @@ mkdir -p -m 700 ~/educates && cp proxmox.env.example ~/educates/proxmox.env && c
 
 The comments in the examples explain each setting. The full list is in the [root module README](../../../root-modules/educates-on-proxmox/README.md#settings).
 
+Keep everything with secrets out of the clone: `~/educates/` holds `proxmox.env`, and later your certificate files and `educates.yaml`.
+
+The single-host example is tested with one Talos VM on a Proxmox cluster, not yet on a standalone Proxmox host with `local` / `local-lvm` storage. Report any problem you find there.
+
 ## 4. Deploy the cluster
 
 ### Option A: from your workstation
@@ -104,10 +109,11 @@ The comments in the examples explain each setting. The full list is in the [root
 set -a; . ~/educates/proxmox.env; set +a     # secrets, into this shell only
 tofu init
 scripts/preflight.sh --var-file my-cluster.tfvars    # checks tools, Proxmox, privileges, network: fix every FAIL
-tofu plan -var-file=my-cluster.tfvars -out=plan.out  # review what will be created
-tofu apply plan.out                                  # 10–20 minutes
+tofu plan -var-file=my-cluster.tfvars -out=my-cluster.tfplan   # review what will be created
+tofu apply my-cluster.tfplan && rm my-cluster.tfplan            # 10–20 minutes; the plan file holds secrets
 export KUBECONFIG=$PWD/kubeconfig-educates.yaml TALOSCONFIG=$PWD/talosconfig-educates   # educates = cluster_name
-scripts/e2e-test.sh                                  # storage, LoadBalancer, network: all PASS
+scripts/preflight.sh --var-file my-cluster.tfvars --after      # this machine reaches every node
+scripts/e2e-test.sh                                             # storage, LoadBalancer, network: all PASS
 ```
 
 ### Option B: from a jump host
@@ -118,7 +124,13 @@ Fill in `jump-host.env` (`JUMP_HOST`, `JUMP_DIR`), then from your workstation:
 scripts/jump-host.sh setup       # work directory on the jump host, a clone of this repository, state outside the clone
 ```
 
-On the jump host, copy your `my-cluster.tfvars` and `proxmox.env` into the work directory. Then, from your workstation:
+Copy your `my-cluster.tfvars` and `proxmox.env` into the work directory on the jump host:
+
+```shell
+scp my-cluster.tfvars ~/educates/proxmox.env <JUMP_HOST>:<JUMP_DIR>/
+```
+
+Then, from your workstation:
 
 ```shell
 scripts/jump-host.sh preflight   # the checks, run on the jump host: fix every FAIL
@@ -139,6 +151,12 @@ scripts/jump-host.sh shell       # a shell there, with KUBECONFIG and TALOSCONFI
 ## 5. Install Educates
 
 Educates 4 is installed by an operator, with the Educates CLI. Its own documentation is in the [Educates installation guides](https://github.com/educates/educates-training-platform/tree/develop/project-docs/installation-guides). This section is the path tested on this cluster, with Educates `4.0.0-alpha.13`.
+
+Run these commands where `kubectl` reaches the cluster, in `~/educates` (outside the clone). With a jump host:
+
+- open `scripts/jump-host.sh shell`;
+- put the Educates CLI in `<work dir>/bin`;
+- copy your certificate files and `educates.yaml` to the work directory.
 
 ### Certificates
 
@@ -162,7 +180,7 @@ awk '/BEGIN CERT/{n++} n>1' tls.crt > chain.pem && openssl verify -CAfile ca.crt
 
 ```shell
 DOMAIN=workshops.example.com
-mkdir -m 700 lab-ca && cd lab-ca && umask 077
+mkdir -m 700 ~/educates/lab-ca && cd ~/educates/lab-ca && umask 077     # outside the clone
 # CA, 5 years. Name constraints: it can only sign names under $DOMAIN, even once imported into browsers.
 openssl req -x509 -new -newkey rsa:3072 -nodes -sha256 -days 1825 -keyout ca.key -out ca.crt \
   -subj "/O=Educates/CN=Educates Lab CA" \
@@ -179,7 +197,7 @@ Keep `ca.key` where you created it: it never enters the cluster. Other options, 
 
 ### Configure and deploy
 
-Write `educates.yaml`, with your domain:
+Write `~/educates/educates.yaml`, with your domain:
 
 ```yaml
 apiVersion: cli.educates.dev/v1alpha1
@@ -233,7 +251,8 @@ kubectl -n contour get service contour-envoy                    # EXTERNAL-IP is
 educates deploy-workshop -f https://github.com/educates/lab-k8s-fundamentals/releases/latest/download/workshop.yaml \
   --initial 1 --overdue 10m
 educates view-credentials        # the portal URL (educates-cli-ui.<domain>) and its password
-scripts/e2e-test.sh --workshop   # end-to-end check, with a real session (jump host: scripts/jump-host.sh e2e --workshop)
+# End-to-end check with a real session, from the root module directory. --ca-file only with your own lab CA.
+scripts/e2e-test.sh --workshop --ca-file ~/educates/lab-ca/ca.crt     # jump host: scripts/jump-host.sh e2e --workshop
 ```
 
 Open the portal URL and start the workshop. The first session on each node takes a few minutes, while the image downloads.

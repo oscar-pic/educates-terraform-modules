@@ -6,14 +6,15 @@
 #   cp examples/ha.tfvars.example my-cluster.tfvars   # *.tfvars is git-ignored
 #   set -a; . ~/educates/proxmox.env; set +a          # secrets, including the Ceph keys
 #   tofu init && scripts/preflight.sh --var-file my-cluster.tfvars
-#   tofu plan -var-file=my-cluster.tfvars -out=plan.out && tofu apply plan.out
+#   tofu plan -var-file=my-cluster.tfvars -out=my-cluster.tfplan && tofu apply my-cluster.tfplan && rm my-cluster.tfplan
 
 proxmox_endpoint = "https://pve.example.com:8006/"
+proxmox_insecure = true # self-signed Proxmox certificate; false with a trusted one
 
 cluster_name = "educates"
 
 proxmox = {
-  region                 = "pve-cluster"
+  region                 = "pve-cluster" # any name: the topology.kubernetes.io/region label Proxmox CSI uses; keep it fixed
   vm_datastore           = "ceph-vms" # shared (Ceph RBD)
   image_datastore        = "cephfs"   # shared, must allow the 'Import' content type
   image_datastore_shared = true
@@ -35,12 +36,13 @@ talos = {
   version            = "v1.14.6"
   config_contract    = "v1.14" # keep it fixed after the first apply
   kubernetes_version = "1.37.2"
+  ntp_servers        = ["192.168.10.1"] # your NTP servers, if public ones are not reachable
 }
 
 network = {
   cidr        = "192.168.10.0/24"
   gateway     = "192.168.10.1"
-  dns_servers = ["192.168.10.1"]
+  dns_servers = ["192.168.10.1"] # your DNS: it must resolve proxmox_endpoint
   api_vip     = "192.168.10.20"
 }
 
@@ -58,7 +60,7 @@ gateway_api = {
 # Free IPs in the node network for LoadBalancer Services. The Educates ingress takes one of them:
 # choose it now and point the wildcard DNS record *.<domain> to it.
 load_balancer = {
-  ip_pools = ["192.168.10.240/28"]
+  ip_pools = ["192.168.10.240-192.168.10.249"]
 }
 
 # With Ceph: Ceph RBD as the default class (RWO, no per-VM disk limit), CephFS for shared

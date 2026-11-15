@@ -107,7 +107,8 @@ grant /pool/<pool>                      PVEVMAdmin      # on the pool: /vms/<id>
 grant /storage/<vm-datastore>           EducatesDatastore
 grant /storage/<image-datastore>        EducatesImage
 grant /nodes/<download-node>            EducatesDownload
-grant /sdn/zones/localnetwork/<bridge>  PVESDNUser
+grant /sdn/zones/localnetwork/<bridge>  PVESDNUser      # SDN VNet: /sdn/zones/<zone>/<vnet>
+grant /sdn/zones/localnetwork/<storage-bridge> PVESDNUser   # only with storage_network
 grant /                                 EducatesHA                       # only with Proxmox HA
 ```
 
@@ -242,10 +243,10 @@ What the script does, if you prefer doing it by hand:
 |---|---|---|
 | `git` | Cloning this repository | Any |
 | OpenTofu or Terraform | Deploying the cluster | ≥ 1.6 |
-| `kubectl` | Using the cluster, installing Educates with Helm | Within one minor version of the cluster's Kubernetes (1.35–1.37 for 1.36) |
+| `kubectl` | Using the cluster, installing Educates | Within one minor version of the cluster's Kubernetes (1.36–1.38 for the default 1.37) |
 | `talosctl` | Health checks, Talos upgrades, diagnostics ([operations.md](operations.md)) | Same minor version as Talos (1.14) |
 | Educates CLI (`educates`) | Installing Educates (`educates admin platform deploy`) and managing workshops | Same version as the Educates release |
-| `helm` | Installing Educates without the Educates CLI (Helm-based installation) | 3.x or 4.x |
+| `helm` | Optional: installing Educates without its CLI ([Helm-based installation](https://github.com/educates/educates-training-platform/tree/develop/project-docs/installation-guides)) | 3.x or 4.x |
 
 OpenTofu does not need the `helm` binary. The Helm provider has its own copy.
 
@@ -314,7 +315,7 @@ These modules do not install Educates, but the cluster must be ready for it.
 **Certificate.** Get a wildcard certificate for `*.<domain>` from one of these:
 
 - your own certificate;
-- a lab CA that Educates uses to sign (browsers must trust it);
+- a lab CA you create, which signs the wildcard certificate (browsers must trust it; see [getting-started](getting-started.md#certificates));
 - ACME DNS-01 with a provider Educates supports.
 
 **Workshop users** only need a browser, and network access from it to the ingress IP on TCP 80 and 443. If a proxy or firewall sits in between:

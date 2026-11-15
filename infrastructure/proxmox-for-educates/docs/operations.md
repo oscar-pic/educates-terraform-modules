@@ -197,7 +197,7 @@ kubectl get pv
 3. Destroy and review the plan before applying it:
 
    ```shell
-   tofu plan -destroy -var-file=my-cluster.tfvars -out=destroy.out && tofu apply destroy.out
+   tofu plan -destroy -var-file=my-cluster.tfvars -out=destroy.tfplan && tofu apply destroy.tfplan && rm destroy.tfplan
    scripts/jump-host.sh plan -destroy && scripts/jump-host.sh apply      # on a jump host
    ```
 

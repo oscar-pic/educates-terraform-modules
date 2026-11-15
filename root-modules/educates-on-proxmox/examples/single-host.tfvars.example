@@ -6,7 +6,7 @@
 #   cp examples/single-host.tfvars.example my-cluster.tfvars   # *.tfvars is git-ignored
 #   set -a; . ~/educates/proxmox.env; set +a                   # secrets (see proxmox.env.example)
 #   tofu init && scripts/preflight.sh --var-file my-cluster.tfvars
-#   tofu plan -var-file=my-cluster.tfvars -out=plan.out && tofu apply plan.out
+#   tofu plan -var-file=my-cluster.tfvars -out=my-cluster.tfplan && tofu apply my-cluster.tfplan && rm my-cluster.tfplan
 
 proxmox_endpoint = "https://pve.example.com:8006/"
 proxmox_insecure = true # self-signed Proxmox certificate
@@ -29,11 +29,13 @@ proxmox = {
 #   version            = "v1.14.6"
 #   config_contract    = "v1.14"
 #   kubernetes_version = "1.37.2"
+#   ntp_servers        = ["192.168.10.1"] # your NTP servers, if public ones are not reachable
 # }
 
 network = {
-  cidr    = "192.168.10.0/24"
-  gateway = "192.168.10.1"
+  cidr        = "192.168.10.0/24"
+  gateway     = "192.168.10.1"
+  dns_servers = ["192.168.10.1"] # your DNS: it must resolve proxmox_endpoint (Proxmox CSI uses it from the nodes)
   # Optional with one control-plane node, but set it if the cluster may grow to three:
   # the API endpoint is fixed when the cluster is created (see docs/operations.md, Scaling).
   # api_vip = "192.168.10.20"
