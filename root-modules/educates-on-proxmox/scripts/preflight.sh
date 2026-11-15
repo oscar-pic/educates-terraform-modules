@@ -278,6 +278,19 @@ check_privs() {
   if has_privs "$tok" "$path" "$@"; then pass "$label: $path"; else fail "$label: $path, missing:$MISSING"; fi
 }
 
+# pool_get <pool>: 0 if the pool exists (its entry in $TMP/pool.json); sets API_CODE.
+# Uses GET /pools?poolid=: the older GET /pools/{poolid} does not support nested pools.
+pool_get() {
+  local q; q="$(jq -rn --arg p "$1" '$p|@uri')"
+  api "$TOKEN" "/pools?poolid=$q" || return 1
+  if ! jq -e '.data | length > 0' "$TMP/api.json" >/dev/null; then
+    # The list hides pools the token cannot audit: only "missing" if it could have seen it.
+    if has_privs "$TOKEN" "/pool/$1" Pool.Audit; then API_CODE=404; else API_CODE=403; fi
+    return 1
+  fi
+  jq '.data[0]' "$TMP/api.json" > "$TMP/pool.json"
+}
+
 # check_vm_privs <token> <label> <priv>...: Proxmox accepts VM privileges on the pool
 # (/pool/<pool>, when proxmox.pool is set) or on each VM (/vms/<id>).
 check_vm_privs() {
@@ -335,7 +348,7 @@ if $PVE_OK; then
   CREATE_POOL="$(cfg '.proxmox.create_pool // false')"
   if [ -n "$POOL" ] && [ "$CREATE_POOL" != "true" ]; then
     # Existing pool, kept by whoever runs Proxmox: it must exist; its parents are not our business.
-    if api "$TOKEN" "/pools/$POOL"; then
+    if pool_get "$POOL"; then
       pass "pool $POOL exists: the VMs go into it (never created or deleted by the module)"
     elif [ "$API_CODE" = "403" ]; then
       fail "pool $POOL: no Pool.Audit on it, so it cannot be checked or used"
@@ -346,8 +359,8 @@ if $PVE_OK; then
     # create_pool: the module owns the last level. It must not exist yet, unless this cluster
     # created it (the module's comment names the cluster). Every level above must exist.
     CN="$(cfg '.cluster_name')"
-    if api "$TOKEN" "/pools/$POOL"; then
-      if jq -e --arg c "Talos Kubernetes cluster '$CN'" '.data.comment // "" | contains($c)' "$TMP/api.json" >/dev/null; then
+    if pool_get "$POOL"; then
+      if jq -e --arg c "Talos Kubernetes cluster '$CN'" '.comment // "" | contains($c)' "$TMP/pool.json" >/dev/null; then
         pass "pool $POOL exists and belongs to this cluster"
       else
         fail "pool $POOL already exists and is not this cluster's: use it without create_pool, or choose another name"
@@ -362,7 +375,7 @@ if $PVE_OK; then
     while [ "${REST#*/}" != "$REST" ]; do
       PARENT="${PARENT:+$PARENT/}${REST%%/*}"
       REST="${REST#*/}"
-      if api "$TOKEN" "/pools/$PARENT"; then
+      if pool_get "$PARENT"; then
         pass "parent pool $PARENT exists"
       elif [ "$API_CODE" = "403" ]; then
         warn "cannot tell whether parent pool $PARENT exists (no Pool.Audit on it)"
