@@ -45,7 +45,7 @@ Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` 
 
 | Path | Privileges | Why |
 |---|---|---|
-| `/pool/<pool>` (with `proxmox.pool`, recommended), or `/vms/<id>` for each VM ID | Role `PVEVMAdmin` | Create and manage the VMs. **Proxmox deletes the ACLs of `/vms/<id>` when it destroys the VM**: after a destroy, per-ID privileges are gone and must be granted again. ACLs on the pool survive, and Proxmox accepts creating a VM in the pool with `VM.Allocate` on the pool |
+| `/pool/<pool>` (with `proxmox.pool`) | Role `PVEVMAdmin` | Create and manage the VMs. **Grant VM privileges on the pool, not on `/vms/<id>`:** Proxmox deletes the ACLs of `/vms/<id>` when it destroys the VM, so after a destroy per-ID privileges are gone and the cluster cannot be recreated until someone grants them again. ACLs on the pool survive, and Proxmox accepts creating a VM in the pool with `VM.Allocate` on the pool. Without a pool, `/vms/<id>` for each VM ID works, but only until the first destroy |
 | `/pool/<pool>`, only with `proxmox.pool` | Role `PVEPoolAdmin` (`Pool.Allocate`, `Pool.Audit`) | Put the VMs in the pool and read it. Nothing on the parent pools. With `proxmox.create_pool`, the pool does not exist yet: grant it on the parent instead (`/pool/lab` for `lab/educates`), which propagates |
 | `/storage/<vm-datastore>` | `Datastore.AllocateSpace`, `Datastore.Audit` | VM disks, EFI disks, cloud-init drives |
 | `/storage/<image-datastore>` | `Datastore.AllocateTemplate`, `Datastore.AllocateSpace`, `Datastore.Audit`, `Datastore.Allocate` | Download and import the Talos image, and **delete** it when a Talos upgrade replaces it or the cluster is destroyed. On a shared datastore, `Datastore.Allocate` also allows deleting other files there. Without it, those deletions fail with HTTP 403: drop the image from the state (`tofu state rm 'module.cluster.proxmox_download_file.talos["<node>"]'`) and let the Proxmox administrator delete the file |
@@ -62,6 +62,10 @@ If the VM datastore and the image datastore are the same storage, one ACL with t
 
 `scripts/preflight.sh` checks the pool for either case, and the token's privileges.
 
+**VM IDs.** With privileges on the pool, Proxmox does not restrict which VM IDs the token uses. Agree on a range with the Proxmox administrator and set `nodes[*].vm_id` within it.
+
+**The Talos image.** The module only deletes the image files it downloaded, named `talos-<version>-<schematic>-nocloud-amd64.qcow2`, never other files in the image datastore.
+
 ```shell
 pveum role add EducatesDatastore -privs "Datastore.AllocateSpace Datastore.Audit"
 pveum role add EducatesImage     -privs "Datastore.AllocateTemplate Datastore.AllocateSpace Datastore.Audit Datastore.Allocate"
@@ -73,7 +77,7 @@ pveum user token add terraform@pve educates --privsep 1                 # prints
 
 grant() { pveum acl modify "$1" --roles "$2" --users terraform@pve --tokens 'terraform@pve!educates'; }
 grant /pool/<pool>                      PVEPoolAdmin    # with proxmox.pool (an existing pool)
-grant /pool/<pool>                      PVEVMAdmin      # or one ACL per /vms/<id>
+grant /pool/<pool>                      PVEVMAdmin      # on the pool: /vms/<id> ACLs vanish on destroy
 grant /storage/<vm-datastore>           EducatesDatastore
 grant /storage/<image-datastore>        EducatesImage
 grant /nodes/<download-node>            EducatesDownload
@@ -287,8 +291,8 @@ The jump host works for this too.
 
 - [ ] Proxmox VE version (≥ 8.4) and host names
 - [ ] Workstation or jump host chosen; `scripts/preflight.sh` passes on it (tools, Proxmox API and token permissions, datastores, route to the node subnet, internet or mirrors)
-- [ ] Resource pool for the cluster's VMs: its name (it exists; or `create_pool`)
-- [ ] Terraform API token (ID and secret) with the [ACLs](#credentials), including `PVEPoolAdmin` on the pool
+- [ ] Resource pool for the cluster's VMs: its name (it exists; or `create_pool`), and the VM ID range agreed with the Proxmox administrator
+- [ ] Terraform API token (ID and secret) with the [ACLs](#credentials), including `PVEPoolAdmin` and `PVEVMAdmin` on the pool, and `Datastore.Allocate` on the image datastore
 - [ ] Proxmox CSI token (ID and secret), if Proxmox CSI is used
 - [ ] VM datastore (shared, if Proxmox HA is used)
 - [ ] Image datastore with `Import` content enabled

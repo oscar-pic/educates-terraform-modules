@@ -122,7 +122,7 @@ pveum user token add kubernetes-csi@pve csi -privsep 1     # prints the secret
 pveum aclmod / -tokens 'kubernetes-csi@pve!csi' -role CSI
 ```
 
-For a narrower scope, grant the role on the cluster's VMs and on the volume datastore (`/storage/<datastore>`) instead of `/`. For the VMs, use `/pool/<pool>` if `proxmox.pool` is set, or each `/vms/<id>`. Grant it to both the user and the token: a privilege-separated token gets the intersection of the two.
+For a narrower scope, grant the role on the cluster's pool (`/pool/<pool>`) and on the volume datastore (`/storage/<datastore>`) instead of `/`. Prefer the pool to each `/vms/<id>`: Proxmox deletes the ACLs of `/vms/<id>` when it destroys the VM. Grant it to both the user and the token: a privilege-separated token gets the intersection of the two.
 
 Pass `kubernetes-csi@pve!csi` as `proxmox_csi.token_id` and the secret as `proxmox_csi_token_secret`.
 
