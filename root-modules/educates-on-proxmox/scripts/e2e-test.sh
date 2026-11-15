@@ -121,14 +121,21 @@ if have talosctl; then
   if talosctl health --wait-timeout 2m >/dev/null 2>&1; then pass "talosctl health"; else fail "talosctl health (run it by hand to see why)"; fi
 fi
 
+# Pods stopped by a graceful node shutdown stay as Failed records until garbage collected:
+# their replacements run, so they are not failures.
+SHUTDOWN_LEFTOVERS=$(kubectl -n kube-system get pods -o json | jq -r '[.items[] | select(.status.phase == "Failed" and ((.status.message // "") | test("node shutdown")))] | length')
+[ "$SHUTDOWN_LEFTOVERS" -gt 0 ] && info "kube-system: $SHUTDOWN_LEFTOVERS pods left Failed by a node shutdown (harmless; see docs/upgrades.md)"
 # Allow up to 2 minutes for pods to settle (for example right after a node reboot).
+not_running() {
+  kubectl -n kube-system get pods -o json | jq -r '.items[] | select(.status.phase != "Running" and .status.phase != "Succeeded") | select((.status.message // "") | test("node shutdown") | not) | .metadata.name'
+}
 for _ in $(seq 1 24); do
-  BAD=$(kubectl -n kube-system get pods --no-headers 2>/dev/null | grep -v -E 'Running|Completed' | grep -c .)
+  BAD=$(not_running | grep -c .)
   [ "$BAD" -eq 0 ] && break; sleep 5
 done
 if [ "$BAD" -eq 0 ]; then pass "kube-system: all pods Running"; else
   fail "kube-system: $BAD pods not Running"
-  kubectl -n kube-system get pods --no-headers | grep -v -E 'Running|Completed' | sed 's/^/       /'
+  not_running | sed 's/^/       /'
 fi
 
 DEFAULT_SC=$(kubectl get storageclass -o json | jq -r '[.items[] | select(.metadata.annotations["storageclass.kubernetes.io/is-default-class"] == "true") | .metadata.name] | join(" ")')

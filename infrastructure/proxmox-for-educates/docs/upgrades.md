@@ -111,6 +111,8 @@ Procedure:
    ```
 
 3. Check that every node reaches the storage network: Ceph monitors on TCP 3300 or 6789.
+   Pods stopped by the graceful node shutdown stay listed as `Failed` ("terminated in response to imminent node shutdown"). Their replacements run elsewhere. Delete these records when you are done:
+   `kubectl delete pods -A --field-selector=status.phase=Failed` (this deletes every Failed pod: check the list first).
 4. Enable Ceph CSI and apply. Then `scripts/e2e-test.sh --all-storage-classes`.
 
 ## Notes

@@ -153,6 +153,8 @@ Verified:
 - Control-plane failover. Rebooting the node that was etcd leader and VIP holder moved the VIP to another node. The API through the VIP and the Educates portal never stopped answering (2-second polling during the whole reboot), and etcd elected a new leader.
 - `scripts/e2e-test.sh --workshop` passes on both topologies.
 - Adding a worker is a plain `apply`: the VM is created directly in the resource pool and joins the cluster. Before that, the `plan` hung for minutes: the health check ran during the plan and waited for the new node. Fixed by making the check depend on every node's configuration.
+- Storage network added to a running 6-node cluster: `apply`, then one reboot per node (Talos reads the nocloud network at boot). etcd kept its node-network peer URLs, thanks to the `advertisedSubnets` pin, and every node reached the Ceph monitors over the new NIC.
+- Ceph CSI 3.17.2 against the Proxmox Ceph (x86-64-v2 hosts). It used one client for RBD in a RADOS namespace, and one for CephFS in its subvolume group with a dedicated data pool. `rw` (not `rwx`) on the CephFS metadata pool was enough. Kernel modules loaded live, with no reboot. Volumes in `ceph-rbd`, `cephfs` and `vm-lab` (Proxmox CSI) are created, written to, and deleted with their claim.
 - Existing nested resource pool, provided by the Proxmox administrator. The token had `PVEPoolAdmin` on that pool only. Moving the 5 running VMs into it was an in-place change with no reboot, and the next plan showed no changes. Two `bpg/proxmox` issues from the previous design did not show with 0.122: the pool-membership race when several VMs join at once, and a pool read gap that made every plan re-add the VMs.
 
 Fixes the deployment needed, all in the module now:
