@@ -17,7 +17,7 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 | 4 | Bundled external-dns: no on-premises DNS providers | The wildcard record must be created by hand | Documented |
 | 5 | Operator and training portal pods trigger Pod Security `restricted` warnings | Warning only; the docs say they meet `restricted` | — |
 | 6 | Default startup timeout vs. first image pull | First session on a node times out | Documented `--overdue`, `--reserved` |
-| 7 | Reserved sessions not created after recreating a portal | To confirm | — |
+| 7 | Reserved sessions not created for a new portal deployed with `--reserved` | No warm session for the first user; sessions start on demand | `--initial 1` |
 | 8 | Gateway API: CRD ownership and fixed addresses | Design input for the upcoming Gateway API support | — |
 | 9 | `platform delete --purge` leaves resources behind, and can strand SecretCopiers | Uninstall needs manual steps | Documented uninstall order |
 
@@ -105,9 +105,13 @@ Clouds use annotations as well, for static IPs and internal load balancers.
 
 **Here.** The getting-started guide deploys the sample workshop with `--reserved 1 --overdue 10m`.
 
-## 7. Reserved sessions not created after recreating a portal (to confirm)
+## 7. Reserved sessions not created for a new portal
 
-**Seen.** After deleting the `educates-cli` TrainingPortal and deploying the workshop again with `--reserved 1`, the portal logged `Updated status of workshop environment ... reserved=1`, but created no session, not even after a restart of its pod. With the previous portal, the same flag created the reserved session at once. Sessions on demand still worked. A brand-new portal with a different name (`e2e`, used by the end-to-end test) creates its sessions normally, every time. So it seems tied to recreating a portal with the same name.
+**Seen.** After deleting the `educates-cli` TrainingPortal and deploying the workshop again with `--reserved 1`, the portal logged `Updated status of workshop environment ... reserved=1`, but created no session, not even after a restart of its pod. With the previous portal, the same flag created the reserved session at once. Sessions on demand still worked. A brand-new portal with a different name (`e2e`, used by the end-to-end test) creates its sessions normally, every time. On a fresh cluster, a brand-new portal deployed with `--reserved 1` again created no reserved session. So it is not about recreating a portal with the same name:
+
+- a new portal with `--reserved 1` gets no reserved session;
+- a new portal with `--initial 1` gets its session;
+- updating an existing portal with `--reserved 1` creates the reserve at once.
 
 Also in the portal log, at start-up: kopf cannot list CRDs (`customresourcedefinitions ... forbidden` for the `training-portal` service account), and then `changes ... will not be noticed`. We do not know yet whether the two are related.
 
