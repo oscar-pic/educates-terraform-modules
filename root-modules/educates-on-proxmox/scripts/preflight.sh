@@ -332,20 +332,30 @@ if $PVE_OK; then
   done
 
   POOL="$(cfg '.proxmox.pool // empty')"
-  if [ -n "$POOL" ]; then
-    # The module owns the last level of the pool: it must not exist yet, unless this cluster
+  CREATE_POOL="$(cfg '.proxmox.create_pool // false')"
+  if [ -n "$POOL" ] && [ "$CREATE_POOL" != "true" ]; then
+    # Existing pool, kept by whoever runs Proxmox: it must exist; its parents are not our business.
+    if api "$TOKEN" "/pools/$POOL"; then
+      pass "pool $POOL exists: the VMs go into it (never created or deleted by the module)"
+    elif [ "$API_CODE" = "403" ]; then
+      fail "pool $POOL: no Pool.Audit on it, so it cannot be checked or used"
+    else
+      fail "pool $POOL does not exist: ask for it, or set create_pool = true to let the module create it"
+    fi
+  elif [ -n "$POOL" ]; then
+    # create_pool: the module owns the last level. It must not exist yet, unless this cluster
     # created it (the module's comment names the cluster). Every level above must exist.
     CN="$(cfg '.cluster_name')"
     if api "$TOKEN" "/pools/$POOL"; then
       if jq -e --arg c "Talos Kubernetes cluster '$CN'" '.data.comment // "" | contains($c)' "$TMP/api.json" >/dev/null; then
         pass "pool $POOL exists and belongs to this cluster"
       else
-        fail "pool $POOL already exists and is not this cluster's: choose another name (the module creates the last level)"
+        fail "pool $POOL already exists and is not this cluster's: use it without create_pool, or choose another name"
       fi
     elif [ "$API_CODE" = "403" ]; then
       warn "cannot tell whether pool $POOL exists (no Pool.Audit on it)"
     else
-      pass "pool $POOL does not exist yet: the module creates it"
+      pass "pool $POOL does not exist yet: the module creates it (create_pool)"
     fi
     PARENT=""
     REST="$POOL"

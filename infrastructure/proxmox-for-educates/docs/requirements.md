@@ -19,6 +19,7 @@ What you need before deploying Educates on Proxmox VE with these modules. Gather
 - **Version 8.4 or later.** The modules import the Talos disk image through the `Import` content type, as qcow2 (Proxmox does not decompress `import` downloads). Prepared and checked on 9.2.
 - **An image datastore** with the `Import` content type enabled (Datacenter → Storage → *datastore* → Content). `local` works. On a Proxmox cluster, a shared datastore such as CephFS or NFS avoids one download per host.
 - **A VM datastore** for VM disks, EFI disks and cloud-init drives. With Proxmox HA it must be shared (Ceph RBD, NFS, iSCSI…).
+- **A resource pool** (recommended) for the cluster's VMs, created by the Proxmox administrator. Its name is an input, for example `educates` or, nested, `lab/educates`. See [Resource pool](#credentials).
 - **Proxmox HA** (optional): an existing Proxmox cluster with quorum. The VMs must use shared storage to move between hosts.
 - **CPU.** VMs use `x86-64-v2-AES` by default. With `host`, live migration only works between identical CPUs.
 
@@ -45,7 +46,7 @@ Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` 
 | Path | Privileges | Why |
 |---|---|---|
 | `/pool/<pool>` (with `proxmox.pool`), or `/vms/<id>` for each VM ID | Role `PVEVMAdmin` | Create and manage the VMs. A pool avoids one ACL per VM ID |
-| `/pool/<pool>`, only with `proxmox.pool` | `Pool.Allocate`, `Pool.Audit` | Create the pool, put the VMs in it, read it, delete it. The pool does not exist yet when it is created: grant it on the parent (`/pool/lab` for `lab/educates`), which propagates, or on `/pool` for a top-level pool |
+| `/pool/<pool>`, only with `proxmox.pool` | Role `PVEPoolAdmin` (`Pool.Allocate`, `Pool.Audit`) | Put the VMs in the pool and read it. Nothing on the parent pools. With `proxmox.create_pool`, the pool does not exist yet: grant it on the parent instead (`/pool/lab` for `lab/educates`), which propagates |
 | `/storage/<vm-datastore>` | `Datastore.AllocateSpace`, `Datastore.Audit` | VM disks, EFI disks, cloud-init drives |
 | `/storage/<image-datastore>` | `Datastore.AllocateTemplate`, `Datastore.AllocateSpace`, `Datastore.Audit` | Download and import the Talos image |
 | `/nodes/<node>` for each node that downloads the image | `Sys.AccessNetwork`, `Sys.Audit` | Download from a URL. This lets the host fetch any URL it can reach. With a shared image datastore only one node downloads: the first, in alphabetical order, of the Proxmox nodes that host VMs. Otherwise every node that hosts a VM downloads |
@@ -54,27 +55,25 @@ Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` 
 
 If the VM datastore and the image datastore are the same storage, one ACL with the image privileges covers both.
 
-**Resource pool (optional, recommended).** A pool groups the cluster's VMs in the Proxmox UI and lets you scope the token by pool instead of by VM ID. Nested pools (Proxmox VE 8.1+) such as `lab/educates` let you group clusters by environment. Set `proxmox.pool`:
+**Resource pool (recommended).** A pool groups the cluster's VMs in the Proxmox UI and lets you scope the token by pool instead of by VM ID. Nested pools (Proxmox VE 8.1+) such as `lab/educates` group clusters by environment.
 
-- **The last level belongs to the cluster.** The module creates it, and deletes it on destroy after the VMs. It must not exist beforehand.
-- **The levels above it must exist** (`lab` in `lab/educates`). The module never creates or changes them.
-- **Proxmox only deletes an empty pool.** If someone puts other VMs in the cluster's pool, the destroy stops at the pool with "pool is not empty", and those VMs are left alone. Move them out, or drop the pool from the state (`tofu state rm`), and destroy again.
+- **An existing pool (the default).** Whoever runs Proxmox creates and keeps the pool, and its name is an input, like the VM IDs and the IPs: set `proxmox.pool`. The module puts its VMs in it, checks that it exists, and never creates, changes or deletes it, not even on destroy. The token needs `PVEPoolAdmin` on `/pool/<pool>`, and nothing on the parent pools.
+- **Or a pool created by the module** (`proxmox.create_pool = true`). The module creates the last level, and deletes it on destroy after the VMs. It must not exist beforehand, and the levels above it must exist: the module never creates or changes them. Proxmox only deletes an empty pool: if someone puts other VMs in it, the destroy stops at the pool ("pool is not empty") and those VMs are left alone.
 
-`scripts/preflight.sh` checks that the pool does not exist yet (or is this cluster's), that its parents exist, and that the token has the privileges.
+`scripts/preflight.sh` checks the pool for either case, and the token's privileges.
 
 ```shell
 pveum role add EducatesDatastore -privs "Datastore.AllocateSpace Datastore.Audit"
 pveum role add EducatesImage     -privs "Datastore.AllocateTemplate Datastore.AllocateSpace Datastore.Audit"
 pveum role add EducatesDownload  -privs "Sys.AccessNetwork Sys.Audit"
-pveum role add EducatesPool      -privs "Pool.Allocate Pool.Audit"       # only with proxmox.pool
 pveum role add EducatesHA        -privs "Sys.Audit Sys.Console"          # only with Proxmox HA
 
 pveum user add terraform@pve
 pveum user token add terraform@pve educates --privsep 1                 # prints the secret
 
 grant() { pveum acl modify "$1" --roles "$2" --users terraform@pve --tokens 'terraform@pve!educates'; }
-grant /pool/educates                    PVEVMAdmin      # proxmox.pool = "educates"; or one ACL per /vms/<id>
-grant /pool                             EducatesPool    # nested pool "lab/educates": grant it on /pool/lab
+grant /pool/<pool>                      PVEPoolAdmin    # with proxmox.pool (an existing pool)
+grant /pool/<pool>                      PVEVMAdmin      # or one ACL per /vms/<id>
 grant /storage/<vm-datastore>           EducatesDatastore
 grant /storage/<image-datastore>        EducatesImage
 grant /nodes/<download-node>            EducatesDownload
@@ -288,7 +287,8 @@ The jump host works for this too.
 
 - [ ] Proxmox VE version (≥ 8.4) and host names
 - [ ] Workstation or jump host chosen; `scripts/preflight.sh` passes on it (tools, Proxmox API and token permissions, datastores, route to the node subnet, internet or mirrors)
-- [ ] Terraform API token (ID and secret) with the [ACLs](#credentials), and the resource pool if you scope by pool
+- [ ] Resource pool for the cluster's VMs: its name (it exists; or `create_pool`)
+- [ ] Terraform API token (ID and secret) with the [ACLs](#credentials), including `PVEPoolAdmin` on the pool
 - [ ] Proxmox CSI token (ID and secret), if Proxmox CSI is used
 - [ ] VM datastore (shared, if Proxmox HA is used)
 - [ ] Image datastore with `Import` content enabled
@@ -297,6 +297,6 @@ The jump host works for this too.
 - [ ] IPs: one per node, API VIP, LoadBalancer range
 - [ ] Outbound access from the node subnet (or mirrors), and from the nodes to the Proxmox API (with the return route) and the storage backend
 - [ ] Storage backend details (Ceph FSID, monitors, client key / NFS export)
-- [ ] VM sizing, VM ID range, tags or pool conventions
+- [ ] VM sizing, VM ID range, tags
 - [ ] Domain, wildcard DNS record and certificate for Educates
 - [ ] Users' network path to the ingress IP (80/443, WebSockets allowed)

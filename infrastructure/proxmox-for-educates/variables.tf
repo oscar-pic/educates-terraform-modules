@@ -19,10 +19,12 @@ variable "proxmox" {
     - ha_enabled: register the VMs as Proxmox HA resources. Needs a Proxmox cluster and shared VM storage.
     - tags: extra Proxmox tags for every VM.
     - pool: Proxmox resource pool for the cluster's VMs (optional), for example "educates" or, nested
-      (PVE 8.1+), "lab/educates". The module creates the pool (the last level) and deletes it on destroy,
-      so it must not exist yet. The levels above it must exist: the module never creates them.
-      Proxmox only deletes an empty pool, so other VMs put in it are never touched; they make the
-      destroy stop at the pool instead. scripts/preflight.sh checks all of this.
+      (PVE 8.1+), "lab/educates". By default it is an existing pool, created and kept by whoever runs
+      Proxmox: the module puts its VMs in it and never creates, changes or deletes it.
+    - create_pool: create the pool instead (the last level only) and delete it on destroy. It must not
+      exist yet, and the levels above it must exist. Proxmox only deletes an empty pool, so VMs that
+      others put in it are never touched; they make the destroy stop at the pool.
+      scripts/preflight.sh checks either case.
   EOT
   type = object({
     region                 = optional(string, "pve")
@@ -33,8 +35,14 @@ variable "proxmox" {
     ha_enabled             = optional(bool, false)
     tags                   = optional(list(string), [])
     pool                   = optional(string)
+    create_pool            = optional(bool, false)
   })
   default = {}
+
+  validation {
+    condition     = !var.proxmox.create_pool || var.proxmox.pool != null
+    error_message = "proxmox.create_pool needs proxmox.pool (the pool to create)."
+  }
 
   validation {
     condition     = var.proxmox.pool == null || can(regex("^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$", var.proxmox.pool))
