@@ -124,6 +124,8 @@ Also in the portal log, at start-up: kopf cannot list CRDs (`customresourcedefin
 - **The runtime CRDs** (`training.educates.dev`, `secrets.educates.dev`). This one is documented.
 - **Four `SecretCopier` objects** (ingress secret and website theme, for the portal and the workshop environment), stuck with the `kopf.zalando.org/KopfFinalizerMarker` finalizer. The platform was removed before the secrets manager had cleaned them up, so nothing could remove the finalizer, and deleting their CRD hung until it was removed by hand.
 
+A second uninstall the next day behaved differently. SecretCopiers of an already-deleted portal were still there after 3 minutes. That time they disappeared with the platform, and no finalizer got stuck. The cleanup of SecretCopiers is not reliable either way.
+
 **Possible fixes.**
 
 - `platform delete` waits for, or deletes, the SecretCopiers (and other kopf-managed objects) while the secrets manager still runs, or refuses while portals still exist.
