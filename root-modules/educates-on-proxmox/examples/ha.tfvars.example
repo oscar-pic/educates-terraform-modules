@@ -17,7 +17,8 @@ proxmox = {
   image_datastore        = "cephfs"   # shared, must allow the 'import' content type
   image_datastore_shared = true
   ha_enabled             = true
-  pool                   = "educates" # existing pool; lets the API tokens be scoped to /pool/educates
+  pool                   = "educates" # or nested, e.g. "lab/educates" (the parent must exist)
+  create_pool            = true       # this cluster owns the pool; false to use an existing one
 }
 
 # Keep kubeconfig and talosconfig outside the repository clone (for example on a jump host).

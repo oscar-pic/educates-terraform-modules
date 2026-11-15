@@ -278,6 +278,26 @@ check_privs() {
   if has_privs "$tok" "$path" "$@"; then pass "$label: $path"; else fail "$label: $path, missing:$MISSING"; fi
 }
 
+# check_vm_privs <token> <label> <priv>...: Proxmox accepts VM privileges on the pool
+# (/pool/<pool>, when proxmox.pool is set) or on each VM (/vms/<id>).
+check_vm_privs() {
+  local tok="$1" label="$2"; shift 2
+  local pool; pool="$(cfg '.proxmox.pool // empty')"
+  if [ -n "$pool" ] && has_privs "$tok" "/pool/$pool" "$@"; then
+    pass "$label: /pool/$pool"
+    return
+  fi
+  local k id
+  for k in $NODE_KEYS; do
+    id="$(cfg --arg k "$k" '.nodes[$k].vm_id // empty')"
+    if [ -z "$id" ]; then
+      fail "$label $k: no vm_id, so privileges are needed on /pool/<pool> or /vms"
+      continue
+    fi
+    check_privs "$tok" "$label $k" "/vms/$id" "$@"
+  done
+}
+
 if $PVE_OK; then
   section "Proxmox placement"
 
@@ -311,18 +331,40 @@ if $PVE_OK; then
     if api "$TOKEN" "/cluster/nextid?vmid=$id"; then pass "$k: VM ID $id is free"; else warn "$k: VM ID $id is in use (expected only if this cluster already exists)"; fi
   done
 
+  POOL="$(cfg '.proxmox.pool // empty')"
+  CREATE_POOL="$(cfg '.proxmox.create_pool // false')"
+  if [ -n "$POOL" ]; then
+    # Existence, and whether create_pool matches it. Pool IDs may be nested ("lab/educates").
+    if api "$TOKEN" "/pools/$POOL"; then POOL_EXISTS=true
+    elif [ "$API_CODE" = "403" ]; then POOL_EXISTS=unknown
+    else POOL_EXISTS=false; fi
+    case "$CREATE_POOL/$POOL_EXISTS" in
+      true/false)  pass "pool $POOL does not exist yet: the module creates it (create_pool = true)" ;;
+      true/true)   fail "pool $POOL already exists: set create_pool = false to use it (the module would fail to create it)" ;;
+      false/true)  pass "pool $POOL exists: the VMs go into it (create_pool = false)" ;;
+      false/false) fail "pool $POOL does not exist: create it, or set create_pool = true if it belongs to this cluster" ;;
+      */unknown)   warn "cannot tell whether pool $POOL exists (no Pool.Audit on it)" ;;
+    esac
+    case "$POOL" in
+      */*)
+        PARENT="${POOL%/*}"
+        if api "$TOKEN" "/pools/$PARENT" || [ "$API_CODE" = "403" ]; then
+          [ "$API_CODE" = "403" ] && warn "cannot tell whether parent pool $PARENT exists (no Pool.Audit on it)" || pass "parent pool $PARENT exists"
+        else
+          fail "parent pool $PARENT does not exist: create it first (the module never creates a parent pool)"
+        fi
+        ;;
+    esac
+  fi
+
   section "Token permissions (OpenTofu)"
 
-  POOL="$(cfg '.proxmox.pool // empty')"
   VM_PRIVS="VM.Allocate VM.Audit VM.Config.CDROM VM.Config.CPU VM.Config.Cloudinit VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options VM.PowerMgmt"
   if [ -n "$POOL" ]; then
-    check_privs "$TOKEN" "VMs (pool)" "/pool/$POOL" $VM_PRIVS
-  else
-    for k in $NODE_KEYS; do
-      id="$(cfg --arg k "$k" '.nodes[$k].vm_id // empty')"
-      check_privs "$TOKEN" "VM $k" "/vms/${id}" $VM_PRIVS
-    done
+    # Pool.Allocate creates the pool and adds VMs to it; Pool.Audit reads it (also on refresh).
+    check_privs "$TOKEN" "pool" "/pool/$POOL" Pool.Allocate Pool.Audit
   fi
+  check_vm_privs "$TOKEN" "VMs" $VM_PRIVS
   check_privs "$TOKEN" "VM datastore" "/storage/$VM_DS" Datastore.AllocateSpace Datastore.Audit
   check_privs "$TOKEN" "image datastore" "/storage/$IMG_DS" Datastore.AllocateTemplate Datastore.AllocateSpace Datastore.Audit
 
@@ -365,14 +407,7 @@ if $PVE_OK; then
       fail "the CSI token was rejected (HTTP $API_CODE)"
     else
       pass "CSI token authenticates"
-      if [ -n "$POOL" ]; then
-        check_privs "$CSI_ID=$CSI_SECRET" "CSI, VMs (pool)" "/pool/$POOL" VM.Audit VM.Config.Disk
-      else
-        for k in $NODE_KEYS; do
-          id="$(cfg --arg k "$k" '.nodes[$k].vm_id // empty')"
-          check_privs "$CSI_ID=$CSI_SECRET" "CSI, VM $k" "/vms/${id}" VM.Audit VM.Config.Disk
-        done
-      fi
+      check_vm_privs "$CSI_ID=$CSI_SECRET" "CSI, VMs" VM.Audit VM.Config.Disk
       for ds in $(cfg '[.storage.proxmox_csi.storage_classes[]?.datastore] | unique | .[]'); do
         check_privs "$CSI_ID=$CSI_SECRET" "CSI, volume datastore" "/storage/$ds" Datastore.Allocate Datastore.AllocateSpace Datastore.Audit
       done

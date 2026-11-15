@@ -18,8 +18,12 @@ variable "proxmox" {
     - cpu_type: QEMU CPU type. 'host' gives the best performance but blocks live migration between different CPUs.
     - ha_enabled: register the VMs as Proxmox HA resources. Needs a Proxmox cluster and shared VM storage.
     - tags: extra Proxmox tags for every VM.
-    - pool: existing Proxmox resource pool for the VMs (optional). Lets the API token be scoped to /pool/<pool>
-      instead of one ACL per VM ID.
+    - pool: Proxmox resource pool for the VMs (optional), for example "educates" or, nested (PVE 8.1+),
+      "lab/educates". Groups the VMs, and lets the API token be scoped to /pool/<pool> instead of one
+      ACL per VM ID.
+    - create_pool: create the pool (true), or use an existing one (false, the default). Only create a
+      pool that belongs to this cluster: the module deletes it on destroy. The parent of a nested pool
+      must exist already: the module never creates it. scripts/preflight.sh tells which case applies.
   EOT
   type = object({
     region                 = optional(string, "pve")
@@ -30,8 +34,14 @@ variable "proxmox" {
     ha_enabled             = optional(bool, false)
     tags                   = optional(list(string), [])
     pool                   = optional(string)
+    create_pool            = optional(bool, false)
   })
   default = {}
+
+  validation {
+    condition     = !var.proxmox.create_pool || var.proxmox.pool != null
+    error_message = "proxmox.create_pool needs proxmox.pool (the pool to create)."
+  }
 }
 
 variable "talos" {
