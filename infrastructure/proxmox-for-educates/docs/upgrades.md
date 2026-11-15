@@ -48,6 +48,13 @@ Talos OS upgrades reboot the node. They are done with `talosctl`, **one node per
    Each node takes about 2 minutes. Never upgrade several control-plane nodes at once.
 3. Run `tofu apply`, so the code matches what runs. It needs `Datastore.Allocate` on the image datastore, to delete the old image. This replaces the downloaded Talos image and updates the installer image in the machine configuration. It must **not** replace any VM: if the plan shows a VM being replaced, stop.
 
+What to expect, measured on a 3 + 3 node cluster going from v1.14.5 to v1.14.6:
+
+- **About 2 minutes per node.**
+- **No API outage.** Talos moves the VIP before it shuts the node down.
+- **The final `tofu apply` replaces only the downloaded image.** It also updates the installer in the configurations, live and with no reboot, and the next plan shows no changes.
+- **Workloads with a single replica and a `ReadWriteOnce` volume are unavailable while their node is upgraded.** Their pod moves to another node only after the volume is detached from the old one. The Educates training portal is one of them: it was unreachable for about 2 minutes, then came back with its data. Upgrade workers outside class hours.
+
 If the nodes cannot reach the internet, mirror the installer image (`factory.talos.dev/...`) before the first upgrade. At creation time Proxmox downloads the disk image, not the nodes, so a missing mirror only shows up on the first upgrade.
 
 ## Updating Cilium or the Gateway API CRDs

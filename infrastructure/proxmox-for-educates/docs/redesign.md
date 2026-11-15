@@ -152,6 +152,11 @@ Verified:
 - Control-plane HA. Going from 1 to 3 control-plane nodes (one per Proxmox host) was a plain `apply`: 2 VMs and their Talos configuration, with no change to the existing nodes. etcd ended with 3 voting members.
 - Control-plane failover. Rebooting the node that was etcd leader and VIP holder moved the VIP to another node. The API through the VIP and the Educates portal never stopped answering (2-second polling during the whole reboot), and etcd elected a new leader.
 - `scripts/e2e-test.sh --workshop` passes on both topologies.
+- Day 2 on a 3 + 3 node cluster with Ceph CSI and Educates:
+  - **Kubernetes 1.36.6 → 1.37.2** through `talos.kubernetes_version`, in 9 minutes. There was one API outage of about 40 s through the VIP (the API server of the VIP holder restarting), and none for workloads, which go through KubePrism.
+  - **Talos v1.14.5 → v1.14.6** with `talosctl upgrade`, one node at a time, about 2 minutes each, with no API outage. The Educates portal was unreachable for 2 minutes while its node was upgraded.
+  - After both upgrades, the plan shows no changes.
+- Destroy, then a single-node cluster, then a destroy again: clean. The VMs and the module's own image are deleted, and the provided pool is left untouched.
 - Adding a worker is a plain `apply`: the VM is created directly in the resource pool and joins the cluster. Before that, the `plan` hung for minutes: the health check ran during the plan and waited for the new node. Fixed by making the check depend on every node's configuration.
 - Storage network added to a running 6-node cluster: `apply`, then one reboot per node (Talos reads the nocloud network at boot). etcd kept its node-network peer URLs, thanks to the `advertisedSubnets` pin, and every node reached the Ceph monitors over the new NIC.
 - Ceph CSI 3.17.2 against the Proxmox Ceph (x86-64-v2 hosts). It used one client for RBD in a RADOS namespace, and one for CephFS in its subvolume group with a dedicated data pool. `rw` (not `rwx`) on the CephFS metadata pool was enough. Kernel modules loaded live, with no reboot. Volumes in `ceph-rbd`, `cephfs` and `vm-lab` (Proxmox CSI) are created, written to, and deleted with their claim.

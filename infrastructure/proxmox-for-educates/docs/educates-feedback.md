@@ -20,6 +20,7 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 | 7 | Reserved sessions not created for a new portal deployed with `--reserved` | No warm session for the first user; sessions start on demand | `--initial 1` |
 | 8 | Gateway API: CRD ownership and fixed addresses | Design input for the upcoming Gateway API support | — |
 | 9 | `platform delete --purge` leaves resources behind, and can strand SecretCopiers | Uninstall needs manual steps | Documented uninstall order |
+| 10 | The training portal is a single replica with a `ReadWriteOnce` volume | Portal down for about 2 minutes whenever its node is drained (upgrades, maintenance) | Documented: upgrade outside class hours |
 
 ## 1. Workshop NetworkPolicy blocks in-cluster traffic on Cilium
 
@@ -136,3 +137,16 @@ A second uninstall the next day behaved differently. SecretCopiers of an already
 - `--purge` removes the `educates` namespace it created.
 
 **Here.** The getting-started guide documents the order: portals, then wait for the SecretCopiers to disappear, then the platform, then the namespace and CRDs.
+
+## 10. The training portal is a single point of failure during node maintenance
+
+**Seen.** The training portal runs one replica with its database on a `ReadWriteOnce` volume. During a rolling Talos upgrade, its node was drained:
+
+- the pod moved to another node;
+- the new pod waited for the volume to detach from the old node ("Waiting for detach … Volume is already used by pod(s)").
+
+The portal answered 503 for about 2 min 20 s, then came back with its data intact. Sessions already running were not affected: they run in their own pods. But nobody could log in or start a workshop in that window.
+
+**Why it matters.** Kubernetes and Talos upgrades, and any node maintenance, are routine on a multi-node cluster. Here the rest of the stack stayed up through them: the API through KubePrism, the ingress, the workshop sessions.
+
+**Possible fixes.** Portal high availability: more than one replica, with a database that allows it (an external PostgreSQL, or a `ReadWriteMany` volume if the portal can share it safely). Or a PodDisruptionBudget plus a quicker hand-over. At least, document it as a maintenance-window consideration.
