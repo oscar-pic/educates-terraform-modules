@@ -152,6 +152,7 @@ Verified:
 - Control-plane HA. Going from 1 to 3 control-plane nodes (one per Proxmox host) was a plain `apply`: 2 VMs and their Talos configuration, with no change to the existing nodes. etcd ended with 3 voting members.
 - Control-plane failover. Rebooting the node that was etcd leader and VIP holder moved the VIP to another node. The API through the VIP and the Educates portal never stopped answering (2-second polling during the whole reboot), and etcd elected a new leader.
 - `scripts/e2e-test.sh --workshop` passes on both topologies.
+- Adding a worker is a plain `apply`: the VM is created directly in the resource pool and joins the cluster. Before that, the `plan` hung for minutes: the health check ran during the plan and waited for the new node. Fixed by making the check depend on every node's configuration.
 - Existing nested resource pool, provided by the Proxmox administrator. The token had `PVEPoolAdmin` on that pool only. Moving the 5 running VMs into it was an in-place change with no reboot, and the next plan showed no changes. Two `bpg/proxmox` issues from the previous design did not show with 0.122: the pool-membership race when several VMs join at once, and a pool read gap that made every plan re-add the VMs.
 
 Fixes the deployment needed, all in the module now:
@@ -166,6 +167,7 @@ Fixes the deployment needed, all in the module now:
 Findings for the Educates team are collected in [educates-feedback.md](educates-feedback.md).
 
 
+- Proxmox HA (`proxmox.ha_enabled`) is not tested on real hardware yet: the first site runs without it.
 - Proxmox cloud-init drive on local storage with Proxmox HA (live migration).
 - When Gateway API is enabled, the Cilium operator must see the Gateway API CRDs at its first start. If it starts without them, it disables the feature without reporting it. Talos applies the external manifest in the same pass as the inline one; the end-to-end test checks the result.
 - Who installs the Gateway API CRDs once Educates ships agentgateway: this module or Educates.
