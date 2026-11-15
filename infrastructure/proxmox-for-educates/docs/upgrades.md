@@ -115,6 +115,19 @@ Procedure:
    `kubectl delete pods -A --field-selector=status.phase=Failed` (this deletes every Failed pod: check the list first).
 4. Enable Ceph CSI and apply. Then `scripts/e2e-test.sh --all-storage-classes`.
 
+## Destroying a cluster
+
+1. **Uninstall Educates first** (`educates admin platform delete`, after deleting portals and workshops). Every volume is then deleted by its CSI driver while the cluster still runs. A volume still in use when the VMs are destroyed stays behind as an orphan disk in Proxmox, or an image or subvolume in Ceph.
+2. Check that no volumes are left: `kubectl get pv` must be empty.
+3. Destroy and review the plan before applying it:
+
+   ```shell
+   tofu plan -destroy -var-file=my-cluster.tfvars -out=destroy.out && tofu apply destroy.out
+   scripts/jump-host.sh plan -destroy && scripts/jump-host.sh apply      # on a jump host
+   ```
+
+   It removes the VMs, the downloaded Talos image and the cluster resources. An existing resource pool (`proxmox.pool`) is never touched; a pool created by the module (`create_pool`) is deleted.
+
 ## Notes
 
 - **Discovery service.** Without the public Talos discovery service (air-gapped clusters, or disabled by policy), `talosctl get members` returns nothing. That is normal. Use `talosctl health` instead.

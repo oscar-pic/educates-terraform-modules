@@ -29,7 +29,8 @@
 #                         (an existing clone or backend_override.tf is kept)
 #   sync [ref]            check out ref (default REPO_REF) and run `tofu init`
 #   preflight [--after]   run scripts/preflight.sh on the jump host
-#   plan                  tofu plan, saved to state/plan.out
+#   plan [args]           tofu plan, saved to state/plan.out; extra args go to tofu
+#                         (plan -destroy prepares a destroy, applied with `apply`)
 #   apply                 apply state/plan.out inside tmux (re-attaches if the session exists)
 #   e2e [options]         run scripts/e2e-test.sh on the jump host (see its --help)
 #   shell                 tmux session in the root module: secrets, KUBECONFIG, TALOSCONFIG,
@@ -107,7 +108,7 @@ EOF
     remote_tty "cd \"$MOD\" && $LOAD_ENV && scripts/preflight.sh --var-file \"$D/$VARS_FILE\" --client-configs-dir \"$D/state\" $*"
     ;;
   plan)
-    remote_tty "cd \"$MOD\" && $LOAD_ENV && $TF plan -input=false $VARS -out=\"$D/state/plan.out\""
+    remote_tty "cd \"$MOD\" && $LOAD_ENV && $TF plan -input=false $VARS $* -out=\"$D/state/plan.out\""
     ;;
   apply)
     remote_tty "tmux new -A -s $SESSION \"cd $MOD && $LOAD_ENV && $TF apply $D/state/plan.out; rm -f $D/state/plan.out; exec bash\""
