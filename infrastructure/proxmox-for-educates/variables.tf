@@ -21,6 +21,9 @@ variable "proxmox" {
     - cpu_type: QEMU CPU type. 'host' gives the best performance but blocks live migration between different CPUs.
     - ha_enabled: register the VMs as Proxmox HA resources. Needs a Proxmox cluster and shared VM storage.
     - tags: extra Proxmox tags for every VM.
+    - default_tags: also tag every VM with "talos", the cluster name and its role (default true).
+      Proxmox checks tags on VM creation against /vms/<id> only, ignoring privileges on the pool: with
+      VM privileges granted only on the pool, set default_tags = false and tags = [] (no tags at all).
     - pool: Proxmox resource pool for the cluster's VMs (optional), for example "educates" or, nested
       (PVE 8.1+), "lab/educates". By default it is an existing pool, created and kept by whoever runs
       Proxmox: the module puts its VMs in it and never creates, changes or deletes it.
@@ -38,6 +41,7 @@ variable "proxmox" {
     cpu_type               = optional(string, "x86-64-v2-AES")
     ha_enabled             = optional(bool, false)
     tags                   = optional(list(string), [])
+    default_tags           = optional(bool, true)
     pool                   = optional(string)
     create_pool            = optional(bool, false)
   })

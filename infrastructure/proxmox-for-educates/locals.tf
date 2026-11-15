@@ -18,6 +18,13 @@ locals {
 
   hostnames = { for k, _ in var.nodes : k => "${var.cluster_name}-${k}" }
 
+  # Proxmox tags per node. No tags at all means the parameter is not sent (null): Proxmox checks
+  # even an empty tags value against /vms/<id>, which pool-only privileges do not cover.
+  vm_tags = { for k, n in var.nodes : k => (
+    length(var.proxmox.tags) + (var.proxmox.default_tags ? 1 : 0) == 0 ? null :
+    sort(distinct(concat(var.proxmox.default_tags ? ["talos", var.cluster_name, n.role] : [], var.proxmox.tags)))
+  ) }
+
   schedulable_control_planes = (
     var.allow_scheduling_on_control_planes != null
     ? var.allow_scheduling_on_control_planes

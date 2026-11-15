@@ -416,6 +416,15 @@ if $PVE_OK; then
     check_privs "$TOKEN" "pool" "/pool/$POOL" Pool.Allocate Pool.Audit
   fi
   check_vm_privs "$TOKEN" "VMs" $VM_PRIVS
+  # Proxmox checks tags on VM creation against /vms/<id> only, not against the pool.
+  if [ "$(cfg '(.proxmox.default_tags // true) or ((.proxmox.tags // []) | length > 0)')" = "true" ]; then
+    for k in $NODE_KEYS; do
+      id="$(cfg --arg k "$k" '.nodes[$k].vm_id // empty')"
+      [ -n "$id" ] || continue
+      has_privs "$TOKEN" "/vms/$id" VM.Config.Options \
+        || fail "VM $k: tags need VM.Config.Options on /vms/$id (Proxmox ignores the pool for tags): set proxmox.default_tags = false and proxmox.tags = [], or grant it"
+    done
+  fi
   check_privs "$TOKEN" "VM datastore" "/storage/$VM_DS" Datastore.AllocateSpace Datastore.Audit
   check_privs "$TOKEN" "image datastore" "/storage/$IMG_DS" Datastore.AllocateTemplate Datastore.AllocateSpace Datastore.Audit
   # Deleting the image (Talos upgrade, destroy) needs Datastore.Allocate; creating it does not.

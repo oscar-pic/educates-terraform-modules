@@ -26,7 +26,7 @@ resource "proxmox_virtual_environment_vm" "node" {
   vm_id       = each.value.vm_id
   pool_id     = var.proxmox.create_pool ? proxmox_virtual_environment_pool.this[0].pool_id : var.proxmox.pool
   description = "Talos ${each.value.role} of Kubernetes cluster '${var.cluster_name}'. Managed by OpenTofu/Terraform."
-  tags        = sort(distinct(concat(["talos", var.cluster_name, each.value.role], var.proxmox.tags)))
+  tags        = local.vm_tags[each.key]
 
   machine         = "q35"
   bios            = "ovmf"

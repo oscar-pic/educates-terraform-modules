@@ -62,6 +62,8 @@ If the VM datastore and the image datastore are the same storage, one ACL with t
 
 `scripts/preflight.sh` checks the pool for either case, and the token's privileges.
 
+**Tags.** By default the module tags each VM ("talos", the cluster name, its role, plus `proxmox.tags`). Proxmox checks tags on VM creation against `/vms/<id>` only, ignoring privileges on the pool. With VM privileges on the pool only, set `proxmox.default_tags = false` and `proxmox.tags = []`: the VMs then have no tags, and the pool groups them. `scripts/preflight.sh` catches this combination.
+
 **VM IDs.** With privileges on the pool, Proxmox does not restrict which VM IDs the token uses. Agree on a range with the Proxmox administrator and set `nodes[*].vm_id` within it.
 
 **The Talos image.** The module only deletes the image files it downloaded, named `talos-<version>-<schematic>-nocloud-amd64.qcow2`, never other files in the image datastore.
