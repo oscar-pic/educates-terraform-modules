@@ -417,7 +417,8 @@ if $PVE_OK; then
   fi
   check_vm_privs "$TOKEN" "VMs" $VM_PRIVS
   # Proxmox checks tags on VM creation against /vms/<id> only, not against the pool.
-  if [ "$(cfg '(.proxmox.default_tags // true) or ((.proxmox.tags // []) | length > 0)')" = "true" ]; then
+  # (jq: "false // true" is true, so test default_tags explicitly)
+  if [ "$(cfg '(.proxmox.default_tags != false) or ((.proxmox.tags // []) | length > 0)')" = "true" ]; then
     for k in $NODE_KEYS; do
       id="$(cfg --arg k "$k" '.nodes[$k].vm_id // empty')"
       [ -n "$id" ] || continue
