@@ -36,7 +36,7 @@ resource "proxmox_virtual_environment_vm" "node" {
   stop_on_destroy = true
   # Never let the provider reboot a node to apply a change: on a cluster that would happen to
   # several nodes at once (etcd quorum). Changes that need a reboot are left pending, and the
-  # nodes are rebooted one at a time (docs/upgrades.md).
+  # nodes are rebooted one at a time (docs/operations.md).
   reboot_after_update = false
 
   agent {

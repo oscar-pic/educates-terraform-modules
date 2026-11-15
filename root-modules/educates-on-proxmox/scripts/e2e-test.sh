@@ -124,7 +124,7 @@ fi
 # Pods stopped by a graceful node shutdown stay as Failed records until garbage collected:
 # their replacements run, so they are not failures.
 SHUTDOWN_LEFTOVERS=$(kubectl -n kube-system get pods -o json | jq -r '[.items[] | select(.status.phase == "Failed" and ((.status.message // "") | test("node shutdown")))] | length')
-[ "$SHUTDOWN_LEFTOVERS" -gt 0 ] && info "kube-system: $SHUTDOWN_LEFTOVERS pods left Failed by a node shutdown (harmless; see docs/upgrades.md)"
+[ "$SHUTDOWN_LEFTOVERS" -gt 0 ] && info "kube-system: $SHUTDOWN_LEFTOVERS pods left Failed by a node shutdown (harmless; see docs/operations.md)"
 # Allow up to 2 minutes for pods to settle (for example right after a node reboot).
 not_running() {
   kubectl -n kube-system get pods -o json | jq -r '.items[] | select(.status.phase != "Running" and .status.phase != "Succeeded") | select((.status.message // "") | test("node shutdown") | not) | .metadata.name'

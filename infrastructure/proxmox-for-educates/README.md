@@ -15,9 +15,11 @@ It uses only the Proxmox API (no SSH to the hypervisors) and needs no local tool
 
 It does not install an ingress controller or cert-manager: the Educates 4 operator installs its own (Contour, cert-manager, Kyverno).
 
-New here? Start with [docs/getting-started.md](docs/getting-started.md): from your Proxmox to a running Educates.
+**To deploy, start with [docs/getting-started.md](docs/getting-started.md)**, from your Proxmox to a running Educates. This README is the module reference.
 
-Before you start, see [docs/requirements.md](docs/requirements.md): Proxmox, network, credentials, and the machine you deploy from. The design, its decisions and the open points are in [docs/redesign.md](docs/redesign.md). Upgrades and other day-2 tasks are in [docs/upgrades.md](docs/upgrades.md).
+- Requirements: [docs/requirements.md](docs/requirements.md).
+- Day-2 operations: [docs/operations.md](docs/operations.md).
+- Design, decisions and open points: [docs/design.md](docs/design.md).
 
 ## Usage
 
@@ -96,7 +98,7 @@ module "cluster" {
 | Proxmox HA resources | Only with `proxmox.ha_enabled` |
 | LoadBalancer IP pool | `CiliumLoadBalancerIPPool` and `CiliumL2AnnouncementPolicy`. Services of type `LoadBalancer` (the Educates ingress or gateway) get an IP from the node network |
 | CSI drivers and StorageClasses | See [Storage](#storage). Applied after the cluster health check |
-| Educates compatibility policy | `educates-allow-in-cluster`, a Cilium policy so Educates workshop pods can reach cluster DNS, services and the API despite the Educates egress NetworkPolicy. Temporary; `educates_workshop_egress_fix = false` turns it off. See [getting-started](docs/getting-started.md#workshop-network-policy-and-cilium-handled-by-the-module) |
+| Educates compatibility policy | `educates-allow-in-cluster`, a Cilium policy so Educates workshop pods can reach cluster DNS, services and the API despite the Educates egress NetworkPolicy. Temporary; `educates_workshop_egress_fix = false` turns it off. See [getting-started](#educates-workshop-network-policy) |
 
 Control-plane nodes run workloads when there are no workers. Set `allow_scheduling_on_control_planes` to override this.
 
@@ -114,25 +116,13 @@ Which one should be the default:
 - **With Ceph CSI, use `ceph-rbd`.** Nodes map RBD volumes directly from Ceph, with no per-VM disk limit and no dependency on the Proxmox API. Educates creates many small volumes (one or more per workshop session).
 - **Without Ceph (for example a single host), use Proxmox CSI.** Mind its limit: a VM accepts about 30 SCSI disks, which caps the volumes per node.
 
-### Proxmox CSI token
+### Proxmox CSI
 
-Create a dedicated user and token for the plugin, with only the rights it needs (from the [plugin docs](https://github.com/sergelogvinov/proxmox-csi-plugin/blob/main/docs/install.md)):
+The plugin uses its own Proxmox token: see [Credentials](docs/requirements.md#credentials) for its privileges and the `pveum` commands. Pass its ID as `proxmox_csi.token_id`, and its secret as `proxmox_csi_token_secret`.
 
-```shell
-pveum role add CSI -privs "VM.Audit VM.Config.Disk Datastore.Allocate Datastore.AllocateSpace Datastore.Audit"
-pveum user add kubernetes-csi@pve
-pveum aclmod / -user kubernetes-csi@pve -role CSI
-pveum user token add kubernetes-csi@pve csi -privsep 1     # prints the secret
-pveum aclmod / -tokens 'kubernetes-csi@pve!csi' -role CSI
-```
+The plugin runs inside the cluster, so the nodes must reach the Proxmox API on TCP 8006. Set `proxmox_csi.url` to the address the nodes use; the root module defaults it to `proxmox_endpoint`.
 
-For a narrower scope, grant the role on the cluster's pool (`/pool/<pool>`) and on the volume datastore (`/storage/<datastore>`) instead of `/`. Prefer the pool to each `/vms/<id>`: Proxmox deletes the ACLs of `/vms/<id>` when it destroys the VM. Grant it to both the user and the token: a privilege-separated token gets the intersection of the two.
-
-Pass `kubernetes-csi@pve!csi` as `proxmox_csi.token_id` and the secret as `proxmox_csi_token_secret`.
-
-The plugin runs inside the cluster, so the nodes must reach the Proxmox API on TCP 8006. Set `proxmox_csi.url` to the address the nodes use. The root module defaults it to `proxmox_endpoint`.
-
-The plugin finds where a node runs from the node labels `topology.kubernetes.io/region` (`proxmox.region`) and `topology.kubernetes.io/zone` (Proxmox node). This module sets both.
+It finds where a node runs from the node labels `topology.kubernetes.io/region` (`proxmox.region`) and `topology.kubernetes.io/zone` (Proxmox node). This module sets both.
 
 Caveats:
 
@@ -166,13 +156,19 @@ Caveats:
   - `cephfs.fs_name` and `cephfs.subvolume_group`, and `cephfs.data_pool` for a dedicated data pool.
 - **Keys.** `ceph auth get-key client.<name>`, passed as `TF_VAR_*` variables (see `proxmox.env.example`).
 - **Storage network.** If Ceph is on its own network, give the VMs a second NIC with `storage_network` and a `storage_ip` per node. Its MTU is inherited from the bridge by default (`mtu = 1`).
-- **Kernel modules.** RBD needs `rbd` and `libceph`, and the CephFS kernel mounter needs `ceph` and `libceph`. The `educates-on-proxmox` root module adds them to `talos.kernel_modules` when RBD or CephFS is enabled. Adding them to running nodes needs a reboot of each node: do it one node at a time (see [docs/upgrades.md](docs/upgrades.md)).
+- **Kernel modules.** RBD needs `rbd` and `libceph`, and the CephFS kernel mounter needs `ceph` and `libceph`. The `educates-on-proxmox` root module adds them to `talos.kernel_modules` when RBD or CephFS is enabled. Adding them to running nodes needs a reboot of each node: do it one node at a time (see [docs/operations.md](docs/operations.md)).
+
+## Educates workshop network policy
+
+Educates puts a NetworkPolicy in every workshop namespace, meaning "allow all egress except the cloud metadata IP" (`ipBlock 0.0.0.0/0 except 169.254.169.254/32`). Cilium applies `ipBlock` only to traffic leaving the cluster. So that policy also blocks workshop pods from cluster DNS, Services and the Kubernetes API: sessions fail to start or to log in. Educates 4 cannot switch it off: `sessionManager.network.blockedCidrs: []` is treated as unset.
+
+`45-educates-compat.tf` adds a Cilium policy, `educates-allow-in-cluster`, that gives in-cluster egress to pods in Educates workshop namespaces only. Cilium policies add up, so workshop pods get what Educates intends: everything except the metadata IP. It is on by default (`educates_workshop_egress_fix`). Turn it off once Educates handles Cilium. `scripts/e2e-test.sh` checks it.
 
 ## Things to know
 
-- **Upgrades.** Bumping `talos.version` replaces the downloaded image, never the VMs. Upgrade the running nodes with `talosctl upgrade`, one at a time (see [docs/upgrades.md](docs/upgrades.md)).
+- **Upgrades.** Bumping `talos.version` replaces the downloaded image, never the VMs. Upgrade the running nodes with `talosctl upgrade`, one at a time (see [docs/operations.md](docs/operations.md)).
 - **`talos.config_contract`.** Keep it at the value the cluster was created with.
-- **Cilium and Gateway API CRDs** are created at bootstrap. To update them later, apply and then run `talosctl upgrade-k8s` (see [docs/upgrades.md](docs/upgrades.md)).
+- **Cilium and Gateway API CRDs** are created at bootstrap. To update them later, apply and then run `talosctl upgrade-k8s` (see [docs/operations.md](docs/operations.md)).
 - **`proxmox.cpu_type = "host"`** is faster, but blocks live migration between hosts with different CPUs.
 - **Outputs.** The `kubeconfig` output is the admin (break-glass) credential. Treat the state file as a secret: it holds the cluster PKI.
 

@@ -4,14 +4,16 @@ Terraform modules used for Educates cluster management
 
 This repository provides a set of reusable Terraform modules to create [Educates Infrastructure](./infrastructure/) such as an EKS or GKE cluster to be used for Educates, with all the typical pre-requisites satisfied, and there's modules to create the [Educates Platform](./platform/) on a cluster.
 
-There's also [root-modules](./root-modules/) that serve as reference implementations showing how to get a full [Educates](educates.dev) installation.
+There's also [root-modules](./root-modules/) that serve as reference implementations showing how to get a full [Educates](https://educates.dev) installation.
 These are not versioned.
 
 - [gke](./root-modules/educates-on-gke/)
 - [eks](./root-modules/educates-on-eks/)
-- [proxmox](./root-modules/educates-on-proxmox/) (Talos Linux on Proxmox VE, work in progress)
+- [proxmox](./root-modules/educates-on-proxmox/) (Talos Linux on Proxmox VE)
 
-## Configuration examples
+> **Proxmox** works differently from EKS and GKE: it builds the cluster only, and Educates 4 is then installed with its own installer, not with `platform/educates`. Its settings are not the common ones below. Start with its [getting started guide](./infrastructure/proxmox-for-educates/docs/getting-started.md).
+
+## Configuration examples (EKS and GKE)
 
 In each of the root modules you will see `examples` directories.
 In them you will see example configurations for typical scenarios.

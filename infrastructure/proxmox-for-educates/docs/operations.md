@@ -1,13 +1,40 @@
-# Upgrades and day-2 operations
+# Day-2 operations
 
-Commands assume `talosctl` and `kubectl` use the files written by the root module:
+Operating a cluster built with these modules, and Educates on it.
 
-```shell
-export TALOSCONFIG=$PWD/talosconfig-<cluster_name>
-export KUBECONFIG=$PWD/kubeconfig-<cluster_name>.yaml
-```
+- [Using kubectl and talosctl](#using-kubectl-and-talosctl)
+- [Changing the configuration](#changing-the-configuration)
+- [Upgrading Kubernetes](#upgrading-kubernetes) and [Talos](#upgrading-talos)
+- [Updating Cilium or the Gateway API CRDs](#updating-cilium-or-the-gateway-api-crds)
+- [Draining a node](#draining-a-node-by-hand), [scaling](#scaling), [adding a storage network](#adding-a-storage-network-to-a-running-cluster)
+- [Renewing the Educates certificate](#renewing-the-educates-certificate)
+- [Uninstalling Educates](#uninstalling-educates) and [destroying the cluster](#destroying-a-cluster)
 
 Rehearse every procedure on a test cluster first.
+
+## Using kubectl and talosctl
+
+The deployment writes `kubeconfig-<cluster_name>.yaml` and `talosconfig-<cluster_name>` to `client_configs_dir`: next to the root module, or to `<work dir>/state` on a jump host. Keep them as separate files, like the kubeconfig files of the EKS and GKE modules: never merge them into `~/.kube/config` or `~/.talos/config`. Point the tools at them:
+
+```shell
+export KUBECONFIG=<dir>/kubeconfig-<cluster_name>.yaml
+export TALOSCONFIG=<dir>/talosconfig-<cluster_name>
+
+kubectl get nodes -o wide
+talosctl health                            # checks the whole cluster
+talosctl -n <node-ip> dashboard            # live view of one node
+talosctl -n <node-ip> logs kubelet
+```
+
+Without `-n`, `talosctl` talks to the first control-plane node.
+
+On a jump host, `scripts/jump-host.sh shell` opens a `tmux` session with all of this set. To work in an SSH session of your own instead, load the same environment first:
+
+```shell
+. <work dir>/repo/root-modules/educates-on-proxmox/scripts/guest-env.sh <work dir>
+```
+
+It keeps every tool inside the work directory, so nothing is written to the jump host user's home.
 
 ## Changing the configuration
 
@@ -128,9 +155,44 @@ Procedure:
    `kubectl delete pods -A --field-selector=status.phase=Failed` (this deletes every Failed pod: check the list first).
 4. Enable Ceph CSI and apply. Then `scripts/e2e-test.sh --all-storage-classes`.
 
+## Renewing the Educates certificate
+
+`StaticCertificate` renews nothing. When the certificate is renewed (by your CA's tooling, or by you), update the Secret. Educates copies it by itself to the namespaces that use it, with no redeploy:
+
+```shell
+kubectl -n educates-installer create secret tls educates-wildcard-tls --cert=tls.crt --key=tls.key \
+  --dry-run=client -o yaml | kubectl apply -f -
+# A minute or two later, check what the ingress serves:
+echo | openssl s_client -connect <any-host>.<domain>:443 -servername <any-host>.<domain> 2>/dev/null \
+  | openssl x509 -noout -issuer -enddate
+```
+
+Do the same with `educates-ca` if the root CA changes. The certificate's `notAfter` date tells you when to renew.
+
+## Uninstalling Educates
+
+Do it before destroying the cluster. Every volume is then deleted by its CSI driver while the cluster still runs. Volumes left behind become orphan disks in Proxmox, or images and subvolumes in Ceph.
+
+```shell
+# 1. Portals: their workshops, sessions and the portal's own volume go with them.
+kubectl delete trainingportals --all --wait=true
+# 2. Give Educates a few minutes to clean up what it copied for the portals (some may remain).
+kubectl get secretcopiers.secrets.educates.dev
+# 3. The platform: operator, Contour, Kyverno, and with --purge its CRDs and namespaces.
+educates admin platform delete --yes --purge
+# 4. What Educates 4 leaves behind: the "educates" namespace and the runtime CRDs.
+kubectl delete namespace educates --ignore-not-found
+kubectl get crd -o name | grep -E '\.educates\.dev$' | xargs -r kubectl delete
+#    If that hangs, SecretCopiers are stuck with a finalizer nobody removes any more:
+#    kubectl get secretcopiers.secrets.educates.dev -o name | \
+#      xargs -r -I{} kubectl patch {} --type=merge -p '{"metadata":{"finalizers":null}}'
+# 5. Check: no volumes left.
+kubectl get pv
+```
+
 ## Destroying a cluster
 
-1. **Uninstall Educates first** (`educates admin platform delete`, after deleting portals and workshops). Every volume is then deleted by its CSI driver while the cluster still runs. A volume still in use when the VMs are destroyed stays behind as an orphan disk in Proxmox, or an image or subvolume in Ceph.
+1. **Uninstall Educates first** ([above](#uninstalling-educates)). Every volume is then deleted by its CSI driver while the cluster still runs. A volume still in use when the VMs are destroyed stays behind as an orphan disk in Proxmox, or an image or subvolume in Ceph.
 2. Check that no volumes are left: `kubectl get pv` must be empty.
 3. Destroy and review the plan before applying it:
 

@@ -2,7 +2,18 @@
 
 What you need before deploying Educates on Proxmox VE with these modules. Gather everything in the [checklist](#checklist) before the first `tofu apply`.
 
-> Draft. The first deployments on real hardware will confirm or correct it.
+To deploy step by step, follow [getting-started.md](getting-started.md); this page is the reference behind it.
+
+**Minimum for a lab** (one Proxmox host, one Talos VM):
+
+- [ ] Proxmox VE 8.4 or later, with a datastore that allows the `Import` content type (for example `local`) and one for VM disks (for example `local-lvm`).
+- [ ] A resource pool, a range of VM IDs, and the two [API tokens](#credentials) with their privileges on the pool.
+- [ ] On the node network: one free IP for the VM, and a few free IPs for LoadBalancer Services.
+- [ ] Outbound access from Proxmox and the VM to the internet (or mirrors).
+- [ ] A machine with the [tools](#tools) that reaches the node network.
+- [ ] For Educates: a domain, a wildcard DNS record to one of the LoadBalancer IPs, and a certificate.
+
+The full [checklist](#checklist) is at the end.
 
 ## Topologies
 
@@ -34,7 +45,7 @@ What you need before deploying Educates on Proxmox VE with these modules. Gather
 
 Proxmox does not allow narrowing those privileges, and they give console access to every VM and host. A provider will normally not grant them.
 
-Usually you do not need it. A cluster with three control-plane nodes and several workers, spread over different Proxmox hosts, is already redundant: Kubernetes keeps running when a host fails. The VMs of the failed host start again when it comes back. Proxmox HA fits single-VM services better, and it is the Proxmox administrator's decision. The first real deployment runs without it, at the provider's request.
+Usually you do not need it. A cluster with three control-plane nodes and several workers, spread over different Proxmox hosts, is already redundant: Kubernetes keeps running when a host fails. The VMs of the failed host start again when it comes back. Proxmox HA fits single-VM services better, and it is the Proxmox administrator's decision.
 
 ## Sizing
 
@@ -102,7 +113,22 @@ grant /                                 EducatesHA                       # only 
 
 A privilege-separated token (`--privsep 1`) gets the intersection of its own ACLs and its user's. So grant every ACL to both, as `grant` does. If one user holds several tokens, the user needs the union of what they need.
 
-**2. Token for Proxmox CSI.** The cluster uses it to create and attach volumes. It needs `VM.Audit` and `VM.Config.Disk` on the cluster's VMs (grant them on the pool: ACLs on `/vms/<id>` disappear when the VMs are destroyed), and `Datastore.Allocate`, `Datastore.AllocateSpace` and `Datastore.Audit` on the volume datastore. See the [module README](../README.md#proxmox-csi-token).
+**2. Token for Proxmox CSI.** The cluster uses it to create and attach volumes. It needs:
+
+- `VM.Audit` and `VM.Config.Disk` on the cluster's VMs: grant them on the pool, because ACLs on `/vms/<id>` disappear when the VMs are destroyed;
+- `Datastore.Allocate`, `Datastore.AllocateSpace` and `Datastore.Audit` on each datastore its StorageClasses use.
+
+Its ID goes in `storage.proxmox_csi.token_id`, and its secret in `TF_VAR_proxmox_csi_token_secret`.
+
+```shell
+pveum role add EducatesCSI -privs "VM.Audit VM.Config.Disk Datastore.Allocate Datastore.AllocateSpace Datastore.Audit"
+pveum user add kubernetes-csi@pve
+pveum user token add kubernetes-csi@pve csi --privsep 1                 # prints the secret
+
+grant() { pveum acl modify "$1" --roles "$2" --users kubernetes-csi@pve --tokens 'kubernetes-csi@pve!csi'; }
+grant /pool/<pool>                      EducatesCSI
+grant /storage/<volume-datastore>       EducatesCSI
+```
 
 No SSH access to the Proxmox hosts is needed.
 
@@ -155,7 +181,7 @@ Either way:
 
 ### Option A: your workstation
 
-Follow the root module's [quick start](../../../root-modules/educates-on-proxmox/README.md#quick-start) in your clone. Keep the tfvars file and the secrets out of git: `*.tfvars` files are ignored, and secrets go in `TF_VAR_*` variables.
+Follow [getting-started.md](getting-started.md#option-a-from-your-workstation) in your clone. Keep the tfvars file and the secrets out of git: `*.tfvars` files are ignored, and secrets go in a `proxmox.env` file outside the clone.
 
 ### Option B: a jump host
 
@@ -166,7 +192,7 @@ Keep everything site-specific outside the clone, so nothing can be committed by 
 ```text
 <work dir>/                 for example ~/educates
 ├── repo/                   clone of this repository, pinned to a commit, push disabled
-├── site.tfvars             your values (IPs, datastores, bridge…)
+├── my-cluster.tfvars       your values (IPs, datastores, bridge…); name set by JUMP_VARS_FILE
 ├── proxmox.env             secrets, mode 0600
 └── state/                  state, plans, kubeconfig and talosconfig, mode 0700
 ```
@@ -176,7 +202,7 @@ Keep everything site-specific outside the clone, so nothing can be committed by 
 ```shell
 cd root-modules/educates-on-proxmox
 scripts/jump-host.sh setup       # layout, clone at your current (pushed) commit, state in state/, tofu init
-# on the jump host: write site.tfvars (with client_configs_dir = "<work dir>/state") and proxmox.env
+# on the jump host: copy my-cluster.tfvars and proxmox.env into the work directory
 scripts/jump-host.sh preflight   # checks, run on the jump host
 scripts/jump-host.sh plan        # saved to state/plan.out
 scripts/jump-host.sh apply       # inside tmux: an SSH drop does not stop it; run again to re-attach
@@ -197,7 +223,8 @@ What the script does, if you prefer doing it by hand:
   }
   ```
 
-- **Client files outside the clone.** Set `client_configs_dir = "<work dir>/state"` in `site.tfvars`, so the kubeconfig and talosconfig land there too.
+- **Client files outside the clone.** `jump-host.sh` passes `client_configs_dir = "<work dir>/state"`, so the kubeconfig and talosconfig land there too. Running `tofu` by hand on the jump host, set it in your tfvars.
+- **Tools.** Install them on the jump host, or put the binaries in `<work dir>/bin`: the scripts add it to the `PATH`.
 - **Secrets only in the shell that runs OpenTofu.** It loads them from `proxmox.env` with `set -a; . proxmox.env; set +a`. Do not print them: `env | grep TF_VAR` shows them too.
 
   ```shell
@@ -216,13 +243,13 @@ What the script does, if you prefer doing it by hand:
 | `git` | Cloning this repository | Any |
 | OpenTofu or Terraform | Deploying the cluster | ≥ 1.6 |
 | `kubectl` | Using the cluster, installing Educates with Helm | Within one minor version of the cluster's Kubernetes (1.35–1.37 for 1.36) |
-| `talosctl` | Health checks, Talos upgrades, diagnostics ([upgrades.md](upgrades.md)) | Same minor version as Talos (1.14) |
+| `talosctl` | Health checks, Talos upgrades, diagnostics ([operations.md](operations.md)) | Same minor version as Talos (1.14) |
 | Educates CLI (`educates`) | Installing Educates (`educates admin platform deploy`) and managing workshops | Same version as the Educates release |
 | `helm` | Installing Educates without the Educates CLI (Helm-based installation) | 3.x or 4.x |
 
 OpenTofu does not need the `helm` binary. The Helm provider has its own copy.
 
-Optional extras: `jq`, `curl` and `openssl` for checks, and the `cilium` CLI for network diagnostics.
+The scripts also need `curl` and `jq`, and the certificate checks need `openssl`. The `cilium` CLI is an optional extra for network diagnostics.
 
 macOS and Linux, amd64 or arm64, are fine. On Windows, use WSL.
 

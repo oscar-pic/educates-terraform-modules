@@ -132,7 +132,7 @@ resource "talos_machine" "node" {
   depends_on = [proxmox_virtual_environment_vm.node]
 
   lifecycle {
-    # Talos OS upgrades are done with talosctl, one node at a time (docs/upgrades.md):
+    # Talos OS upgrades are done with talosctl, one node at a time (docs/operations.md):
     # a new image here would upgrade every node in parallel and break etcd quorum.
     ignore_changes = [image]
   }

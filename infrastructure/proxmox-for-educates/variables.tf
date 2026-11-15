@@ -61,7 +61,7 @@ variable "proxmox" {
 variable "talos" {
   description = <<-EOT
     Talos and Kubernetes versions.
-    - version: Talos version of the disk image. Upgrading a running node is done with talosctl (see docs/upgrades.md);
+    - version: Talos version of the disk image. Upgrading a running node is done with talosctl (see docs/operations.md);
       bumping this value afterwards only replaces the downloaded image, never the VMs.
     - config_contract: Talos machine-config contract. Keep it fixed at the value used when the cluster was created.
       Changing it regenerates every node's configuration.
