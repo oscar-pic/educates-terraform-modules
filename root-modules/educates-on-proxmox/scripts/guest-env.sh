@@ -12,6 +12,7 @@
 #   read. If you need a CLI configuration (for example provider mirrors), put it in
 #   <work dir>/home/.tofurc, or set TF_CLI_CONFIG_FILE in proxmox.env.
 # - <work dir>/bin goes first in PATH, for tools kept there (such as the educates CLI).
+# - <work dir>/home/.bashrc, if any, holds your own aliases and completion (interactive shells).
 # - Secrets from every <work dir>/*.env file, in alphabetical order (proxmox.env, and for
 #   example a ceph.env). A later file can map names without copying secrets:
 #   TF_VAR_ceph_csi_rbd_user_key="$CEPH_RBD_KEY". KUBECONFIG and TALOSCONFIG from <work dir>/state.
@@ -31,6 +32,10 @@ for _guest_f in "$_guest_dir"/*.env; do
   [ -f "$_guest_f" ] && . "$_guest_f"
 done
 set +a
+
+# Personal shell settings for this work directory (aliases, completion), in interactive shells.
+# jump-host.sh shell gets them through bash itself (HOME is <work dir>/home).
+case "$-" in *i*) [ -f "$_guest_dir/home/.bashrc" ] && . "$_guest_dir/home/.bashrc" ;; esac
 
 for _guest_f in "$_guest_dir"/state/kubeconfig-*.yaml; do
   [ -f "$_guest_f" ] && export KUBECONFIG="$_guest_f"
