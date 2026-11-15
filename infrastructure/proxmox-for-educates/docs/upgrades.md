@@ -40,7 +40,7 @@ Talos OS upgrades reboot the node. They are done with `talosctl`, **one node per
    ```
 
    Each node takes about 2 minutes. Never upgrade several control-plane nodes at once.
-3. Run `tofu apply`, so the code matches what runs. This replaces the downloaded Talos image and updates the installer image in the machine configuration. It must **not** replace any VM: if the plan shows a VM being replaced, stop.
+3. Run `tofu apply`, so the code matches what runs. It needs `Datastore.Allocate` on the image datastore, to delete the old image. This replaces the downloaded Talos image and updates the installer image in the machine configuration. It must **not** replace any VM: if the plan shows a VM being replaced, stop.
 
 If the nodes cannot reach the internet, mirror the installer image (`factory.talos.dev/...`) before the first upgrade. At creation time Proxmox downloads the disk image, not the nodes, so a missing mirror only shows up on the first upgrade.
 
@@ -126,7 +126,8 @@ Procedure:
    scripts/jump-host.sh plan -destroy && scripts/jump-host.sh apply      # on a jump host
    ```
 
-   It removes the VMs, the downloaded Talos image and the cluster resources. An existing resource pool (`proxmox.pool`) is never touched; a pool created by the module (`create_pool`) is deleted.
+   It removes the VMs, the downloaded Talos image and the cluster resources. Deleting the image needs `Datastore.Allocate` on the image datastore (see requirements.md). Without it, the destroy stops at the image with HTTP 403: drop it from the state with `tofu state rm` and ask the Proxmox administrator to delete the file.
+   Deleting many VMs at once on a Ceph RBD datastore can fail on Proxmox's side (`rbd: listing images failed`). Run the destroy again: the VMs that are already gone are skipped. An existing resource pool (`proxmox.pool`) is never touched; a pool created by the module (`create_pool`) is deleted.
 
 ## Notes
 

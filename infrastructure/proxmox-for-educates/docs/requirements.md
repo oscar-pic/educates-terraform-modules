@@ -48,7 +48,7 @@ Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` 
 | `/pool/<pool>` (with `proxmox.pool`), or `/vms/<id>` for each VM ID | Role `PVEVMAdmin` | Create and manage the VMs. A pool avoids one ACL per VM ID |
 | `/pool/<pool>`, only with `proxmox.pool` | Role `PVEPoolAdmin` (`Pool.Allocate`, `Pool.Audit`) | Put the VMs in the pool and read it. Nothing on the parent pools. With `proxmox.create_pool`, the pool does not exist yet: grant it on the parent instead (`/pool/lab` for `lab/educates`), which propagates |
 | `/storage/<vm-datastore>` | `Datastore.AllocateSpace`, `Datastore.Audit` | VM disks, EFI disks, cloud-init drives |
-| `/storage/<image-datastore>` | `Datastore.AllocateTemplate`, `Datastore.AllocateSpace`, `Datastore.Audit` | Download and import the Talos image |
+| `/storage/<image-datastore>` | `Datastore.AllocateTemplate`, `Datastore.AllocateSpace`, `Datastore.Audit`, `Datastore.Allocate` | Download and import the Talos image, and **delete** it when a Talos upgrade replaces it or the cluster is destroyed. On a shared datastore, `Datastore.Allocate` also allows deleting other files there. Without it, those deletions fail with HTTP 403: drop the image from the state (`tofu state rm 'module.cluster.proxmox_download_file.talos["<node>"]'`) and let the Proxmox administrator delete the file |
 | `/nodes/<node>` for each node that downloads the image | `Sys.AccessNetwork`, `Sys.Audit` | Download from a URL. This lets the host fetch any URL it can reach. With a shared image datastore only one node downloads: the first, in alphabetical order, of the Proxmox nodes that host VMs. Otherwise every node that hosts a VM downloads |
 | `/sdn/zones/localnetwork/<bridge>` (plain Linux bridge), or `/sdn/zones/<zone>/<vnet>` (SDN VNet) | `SDN.Use` (role `PVESDNUser`) | Attach the NICs. Needed for every bridge used, including the storage network. Since Proxmox VE 8, plain bridges need it too |
 | `/` | `Sys.Audit`, `Sys.Console` | Only with `proxmox.ha_enabled`: creating HA resources |
@@ -64,7 +64,7 @@ If the VM datastore and the image datastore are the same storage, one ACL with t
 
 ```shell
 pveum role add EducatesDatastore -privs "Datastore.AllocateSpace Datastore.Audit"
-pveum role add EducatesImage     -privs "Datastore.AllocateTemplate Datastore.AllocateSpace Datastore.Audit"
+pveum role add EducatesImage     -privs "Datastore.AllocateTemplate Datastore.AllocateSpace Datastore.Audit Datastore.Allocate"
 pveum role add EducatesDownload  -privs "Sys.AccessNetwork Sys.Audit"
 pveum role add EducatesHA        -privs "Sys.Audit Sys.Console"          # only with Proxmox HA
 

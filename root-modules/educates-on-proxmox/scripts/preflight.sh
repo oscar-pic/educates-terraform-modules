@@ -418,6 +418,12 @@ if $PVE_OK; then
   check_vm_privs "$TOKEN" "VMs" $VM_PRIVS
   check_privs "$TOKEN" "VM datastore" "/storage/$VM_DS" Datastore.AllocateSpace Datastore.Audit
   check_privs "$TOKEN" "image datastore" "/storage/$IMG_DS" Datastore.AllocateTemplate Datastore.AllocateSpace Datastore.Audit
+  # Deleting the image (Talos upgrade, destroy) needs Datastore.Allocate; creating it does not.
+  if has_privs "$TOKEN" "/storage/$IMG_DS" Datastore.Allocate; then
+    pass "image datastore: can delete the image on upgrade or destroy"
+  else
+    warn "image datastore /storage/$IMG_DS: no Datastore.Allocate, so Talos upgrades and destroy cannot delete the old image (see requirements.md)"
+  fi
 
   if [ "$IMG_SHARED" = "true" ]; then DL_NODES="$(echo "$PVE_NODES" | head -n1)"; else DL_NODES="$PVE_NODES"; fi
   for n in $DL_NODES; do
