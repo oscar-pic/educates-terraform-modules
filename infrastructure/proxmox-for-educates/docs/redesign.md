@@ -168,6 +168,11 @@ Fixes the deployment needed, all in the module now:
 
 Findings for the Educates team are collected in [educates-feedback.md](educates-feedback.md).
 
+- **Re-enable VM tags when Proxmox fixes [bug 7864](https://bugzilla.proxmox.com/show_bug.cgi?id=7864).** Proxmox VE 9.2 ignores pool privileges for tags on VM creation. The fix was sent to pve-devel in November 2026 and touches `libpve-guest-common-perl`, `qemu-server` and `pve-container`. Once a release ships it:
+  - tell the sites that use pool-only ACLs, so they update Proxmox;
+  - set `proxmox.default_tags` back to `true` in the examples and docs;
+  - make the `preflight.sh` tags check depend on the Proxmox version.
+
 
 - Proxmox HA (`proxmox.ha_enabled`) is not tested on real hardware yet: the first site runs without it.
 - Single-host evaluation topology: one Talos VM (control plane that runs workloads) is tested on the first site, with Proxmox CSI. Not tested on a standalone Proxmox host: a `local` image datastore (`image_datastore_shared = false`), Proxmox CSI on LVM-thin (`local-lvm`), and a cluster without an API VIP.
