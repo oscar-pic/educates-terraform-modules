@@ -110,6 +110,10 @@ Control-plane nodes run workloads when there are no workers. Set `allow_scheduli
 
 Exactly one StorageClass is marked as default (`default_storage_class`). Educates needs a default RWO class.
 
+Which one should be the default:
+- **With Ceph CSI, use `ceph-rbd`.** Nodes map RBD volumes directly from Ceph, with no per-VM disk limit and no dependency on the Proxmox API. Educates creates many small volumes (one or more per workshop session).
+- **Without Ceph (for example a single host), use Proxmox CSI.** Mind its limit: a VM accepts about 30 SCSI disks, which caps the volumes per node.
+
 ### Proxmox CSI token
 
 Create a dedicated user and token for the plugin, with only the rights it needs (from the [plugin docs](https://github.com/sergelogvinov/proxmox-csi-plugin/blob/main/docs/install.md)):

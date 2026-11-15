@@ -52,8 +52,10 @@ load_balancer = {
 
 # RWO volumes as Proxmox disks on the Ceph RBD datastore (default class),
 # RWX volumes from Proxmox's CephFS through the storage network.
+# With Ceph: Ceph RBD as the default class (RWO, no per-VM disk limit), CephFS for shared
+# volumes (RWX), and Proxmox CSI as an extra class.
 storage = {
-  default_class = "proxmox-ceph"
+  default_class = "ceph-rbd"
   proxmox_csi = {
     enabled  = true
     token_id = "kubernetes-csi@pve!csi"
@@ -63,11 +65,12 @@ storage = {
   }
   ceph_csi = {
     enabled    = true
+    version    = "3.18.2" # 3.17.2 on x86-64-v2 hosts (3.18+ needs x86-64-v3)
     cluster_id = "00000000-0000-0000-0000-000000000000" # ceph fsid
     monitors   = ["10.10.10.1:6789", "10.10.10.2:6789", "10.10.10.3:6789"]
-    user_id    = "kubernetes"
-    rbd        = { enabled = false }
-    cephfs     = { enabled = true, fs_name = "cephfs" }
+    user_id    = "kubernetes" # or one client per driver: rbd.user_id, cephfs.user_id
+    rbd        = { pool = "kubernetes", storage_class = "ceph-rbd" }
+    cephfs     = { enabled = true, fs_name = "cephfs", subvolume_group = "csi", storage_class = "cephfs" }
   }
 }
 
