@@ -18,12 +18,11 @@ variable "proxmox" {
     - cpu_type: QEMU CPU type. 'host' gives the best performance but blocks live migration between different CPUs.
     - ha_enabled: register the VMs as Proxmox HA resources. Needs a Proxmox cluster and shared VM storage.
     - tags: extra Proxmox tags for every VM.
-    - pool: Proxmox resource pool for the VMs (optional), for example "educates" or, nested (PVE 8.1+),
-      "lab/educates". Groups the VMs, and lets the API token be scoped to /pool/<pool> instead of one
-      ACL per VM ID.
-    - create_pool: create the pool (true), or use an existing one (false, the default). Only create a
-      pool that belongs to this cluster: the module deletes it on destroy. The parent of a nested pool
-      must exist already: the module never creates it. scripts/preflight.sh tells which case applies.
+    - pool: Proxmox resource pool for the cluster's VMs (optional), for example "educates" or, nested
+      (PVE 8.1+), "lab/educates". The module creates the pool (the last level) and deletes it on destroy,
+      so it must not exist yet. The levels above it must exist: the module never creates them.
+      Proxmox only deletes an empty pool, so other VMs put in it are never touched; they make the
+      destroy stop at the pool instead. scripts/preflight.sh checks all of this.
   EOT
   type = object({
     region                 = optional(string, "pve")
@@ -34,13 +33,12 @@ variable "proxmox" {
     ha_enabled             = optional(bool, false)
     tags                   = optional(list(string), [])
     pool                   = optional(string)
-    create_pool            = optional(bool, false)
   })
   default = {}
 
   validation {
-    condition     = !var.proxmox.create_pool || var.proxmox.pool != null
-    error_message = "proxmox.create_pool needs proxmox.pool (the pool to create)."
+    condition     = var.proxmox.pool == null || can(regex("^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$", var.proxmox.pool))
+    error_message = "proxmox.pool must be a pool ID such as \"educates\" or, nested, \"lab/educates\" (letters, digits, - and _)."
   }
 }
 

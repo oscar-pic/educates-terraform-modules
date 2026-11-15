@@ -332,29 +332,34 @@ if $PVE_OK; then
   done
 
   POOL="$(cfg '.proxmox.pool // empty')"
-  CREATE_POOL="$(cfg '.proxmox.create_pool // false')"
   if [ -n "$POOL" ]; then
-    # Existence, and whether create_pool matches it. Pool IDs may be nested ("lab/educates").
-    if api "$TOKEN" "/pools/$POOL"; then POOL_EXISTS=true
-    elif [ "$API_CODE" = "403" ]; then POOL_EXISTS=unknown
-    else POOL_EXISTS=false; fi
-    case "$CREATE_POOL/$POOL_EXISTS" in
-      true/false)  pass "pool $POOL does not exist yet: the module creates it (create_pool = true)" ;;
-      true/true)   fail "pool $POOL already exists: set create_pool = false to use it (the module would fail to create it)" ;;
-      false/true)  pass "pool $POOL exists: the VMs go into it (create_pool = false)" ;;
-      false/false) fail "pool $POOL does not exist: create it, or set create_pool = true if it belongs to this cluster" ;;
-      */unknown)   warn "cannot tell whether pool $POOL exists (no Pool.Audit on it)" ;;
-    esac
-    case "$POOL" in
-      */*)
-        PARENT="${POOL%/*}"
-        if api "$TOKEN" "/pools/$PARENT" || [ "$API_CODE" = "403" ]; then
-          [ "$API_CODE" = "403" ] && warn "cannot tell whether parent pool $PARENT exists (no Pool.Audit on it)" || pass "parent pool $PARENT exists"
-        else
-          fail "parent pool $PARENT does not exist: create it first (the module never creates a parent pool)"
-        fi
-        ;;
-    esac
+    # The module owns the last level of the pool: it must not exist yet, unless this cluster
+    # created it (the module's comment names the cluster). Every level above must exist.
+    CN="$(cfg '.cluster_name')"
+    if api "$TOKEN" "/pools/$POOL"; then
+      if jq -e --arg c "Talos Kubernetes cluster '$CN'" '.data.comment // "" | contains($c)' "$TMP/api.json" >/dev/null; then
+        pass "pool $POOL exists and belongs to this cluster"
+      else
+        fail "pool $POOL already exists and is not this cluster's: choose another name (the module creates the last level)"
+      fi
+    elif [ "$API_CODE" = "403" ]; then
+      warn "cannot tell whether pool $POOL exists (no Pool.Audit on it)"
+    else
+      pass "pool $POOL does not exist yet: the module creates it"
+    fi
+    PARENT=""
+    REST="$POOL"
+    while [ "${REST#*/}" != "$REST" ]; do
+      PARENT="${PARENT:+$PARENT/}${REST%%/*}"
+      REST="${REST#*/}"
+      if api "$TOKEN" "/pools/$PARENT"; then
+        pass "parent pool $PARENT exists"
+      elif [ "$API_CODE" = "403" ]; then
+        warn "cannot tell whether parent pool $PARENT exists (no Pool.Audit on it)"
+      else
+        fail "parent pool $PARENT does not exist: create it first (the module only creates the last level)"
+      fi
+    done
   fi
 
   section "Token permissions (OpenTofu)"

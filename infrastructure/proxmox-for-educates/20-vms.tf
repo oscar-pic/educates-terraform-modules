@@ -5,10 +5,12 @@
 # over the Talos API (30-talos.tf).
 ###############################################################################
 
-# Optional resource pool owned by this cluster (proxmox.create_pool). An existing pool
-# (create_pool = false) is only referenced, never changed or deleted.
+# Optional resource pool for the cluster's VMs (proxmox.pool). The module owns the last level:
+# it creates it, and deletes it on destroy, after the VMs. Parent levels of a nested pool must
+# exist. Proxmox only deletes an empty pool, so VMs that others put in it are never touched.
+# The comment identifies the pool as this cluster's (scripts/preflight.sh relies on it).
 resource "proxmox_virtual_environment_pool" "this" {
-  count = var.proxmox.create_pool ? 1 : 0
+  count = var.proxmox.pool == null ? 0 : 1
 
   pool_id = var.proxmox.pool
   comment = "Talos Kubernetes cluster '${var.cluster_name}' for Educates. Managed by OpenTofu/Terraform."
@@ -20,7 +22,7 @@ resource "proxmox_virtual_environment_vm" "node" {
   name        = local.hostnames[each.key]
   node_name   = each.value.proxmox_node
   vm_id       = each.value.vm_id
-  pool_id     = var.proxmox.create_pool ? proxmox_virtual_environment_pool.this[0].pool_id : var.proxmox.pool
+  pool_id     = var.proxmox.pool == null ? null : proxmox_virtual_environment_pool.this[0].pool_id
   description = "Talos ${each.value.role} of Kubernetes cluster '${var.cluster_name}'. Managed by OpenTofu/Terraform."
   tags        = sort(distinct(concat(["talos", var.cluster_name, each.value.role], var.proxmox.tags)))
 

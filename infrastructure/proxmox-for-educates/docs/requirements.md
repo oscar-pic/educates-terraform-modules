@@ -45,7 +45,7 @@ Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` 
 | Path | Privileges | Why |
 |---|---|---|
 | `/pool/<pool>` (with `proxmox.pool`), or `/vms/<id>` for each VM ID | Role `PVEVMAdmin` | Create and manage the VMs. A pool avoids one ACL per VM ID |
-| `/pool/<pool>`, only with `proxmox.pool` | `Pool.Allocate`, `Pool.Audit` | Create the pool (with `proxmox.create_pool`), put the VMs in it, read it. For a nested pool such as `lab/educates`, an ACL on the parent (`/pool/lab`) also covers it |
+| `/pool/<pool>`, only with `proxmox.pool` | `Pool.Allocate`, `Pool.Audit` | Create the pool, put the VMs in it, read it, delete it. The pool does not exist yet when it is created: grant it on the parent (`/pool/lab` for `lab/educates`), which propagates, or on `/pool` for a top-level pool |
 | `/storage/<vm-datastore>` | `Datastore.AllocateSpace`, `Datastore.Audit` | VM disks, EFI disks, cloud-init drives |
 | `/storage/<image-datastore>` | `Datastore.AllocateTemplate`, `Datastore.AllocateSpace`, `Datastore.Audit` | Download and import the Talos image |
 | `/nodes/<node>` for each node that downloads the image | `Sys.AccessNetwork`, `Sys.Audit` | Download from a URL. This lets the host fetch any URL it can reach. With a shared image datastore only one node downloads: the first, in alphabetical order, of the Proxmox nodes that host VMs. Otherwise every node that hosts a VM downloads |
@@ -54,13 +54,13 @@ Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` 
 
 If the VM datastore and the image datastore are the same storage, one ACL with the image privileges covers both.
 
-**Resource pool (optional, recommended).** A pool groups the cluster's VMs in the Proxmox UI and lets you scope the token by pool instead of by VM ID. Nested pools (Proxmox VE 8.1+) such as `lab/educates` let you group clusters by environment.
+**Resource pool (optional, recommended).** A pool groups the cluster's VMs in the Proxmox UI and lets you scope the token by pool instead of by VM ID. Nested pools (Proxmox VE 8.1+) such as `lab/educates` let you group clusters by environment. Set `proxmox.pool`:
 
-- **A pool that belongs to this cluster:** set `proxmox.pool` and `proxmox.create_pool = true`. The module creates it, and deletes it with the cluster.
-- **A pool managed elsewhere**, for example by your own infrastructure code: set only `proxmox.pool`. The module puts the VMs in it and never changes or deletes the pool.
-- **Nested pools:** the parent (`lab`) must exist; the module never creates it.
+- **The last level belongs to the cluster.** The module creates it, and deletes it on destroy after the VMs. It must not exist beforehand.
+- **The levels above it must exist** (`lab` in `lab/educates`). The module never creates or changes them.
+- **Proxmox only deletes an empty pool.** If someone puts other VMs in the cluster's pool, the destroy stops at the pool with "pool is not empty", and those VMs are left alone. Move them out, or drop the pool from the state (`tofu state rm`), and destroy again.
 
-`scripts/preflight.sh` checks that the pool exists (or not) as `create_pool` expects, that the parent exists, and that the token has the privileges.
+`scripts/preflight.sh` checks that the pool does not exist yet (or is this cluster's), that its parents exist, and that the token has the privileges.
 
 ```shell
 pveum role add EducatesDatastore -privs "Datastore.AllocateSpace Datastore.Audit"
@@ -69,13 +69,12 @@ pveum role add EducatesDownload  -privs "Sys.AccessNetwork Sys.Audit"
 pveum role add EducatesPool      -privs "Pool.Allocate Pool.Audit"       # only with proxmox.pool
 pveum role add EducatesHA        -privs "Sys.Audit Sys.Console"          # only with Proxmox HA
 
-pveum pool add educates            # or let the module create it: proxmox.create_pool = true
 pveum user add terraform@pve
 pveum user token add terraform@pve educates --privsep 1                 # prints the secret
 
 grant() { pveum acl modify "$1" --roles "$2" --users terraform@pve --tokens 'terraform@pve!educates'; }
-grant /pool/educates                    PVEVMAdmin
-grant /pool/educates                    EducatesPool
+grant /pool/educates                    PVEVMAdmin      # proxmox.pool = "educates"; or one ACL per /vms/<id>
+grant /pool                             EducatesPool    # nested pool "lab/educates": grant it on /pool/lab
 grant /storage/<vm-datastore>           EducatesDatastore
 grant /storage/<image-datastore>        EducatesImage
 grant /nodes/<download-node>            EducatesDownload
