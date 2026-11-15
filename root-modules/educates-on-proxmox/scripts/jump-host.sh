@@ -11,12 +11,12 @@
 #   JUMP_DIR    working directory on the jump host (default: ~/educates)
 #   REPO_URL    repository to clone (default: this clone's 'origin' URL)
 #   REPO_REF    commit, tag or branch to deploy (default: this clone's HEAD commit, which must be pushed)
-#   JUMP_VARS_FILE  name of your tfvars file in JUMP_DIR (default: site.tfvars)
+#   JUMP_VARS_FILE  name of your tfvars file in JUMP_DIR (default: my-cluster.tfvars)
 #
-# Layout on the jump host (created by `setup`; you add site.tfvars and proxmox.env):
+# Layout on the jump host (created by `setup`; you add my-cluster.tfvars and proxmox.env):
 #
 #   $JUMP_DIR/repo/          clone, pinned to REPO_REF, push disabled
-#   $JUMP_DIR/site.tfvars    your values (name set by JUMP_VARS_FILE)
+#   $JUMP_DIR/my-cluster.tfvars    your values (name set by JUMP_VARS_FILE)
 #   $JUMP_DIR/proxmox.env    secrets (TF_VAR_...), mode 0600
 #   $JUMP_DIR/state/         state, plans, kubeconfig, talosconfig, mode 0700
 #                            (the script always passes client_configs_dir=$JUMP_DIR/state)
@@ -55,7 +55,7 @@ JUMP_DIR="${JUMP_DIR:-~/educates}"
 JUMP_DIR="${JUMP_DIR/#"$HOME"/\~}"
 REPO_URL="${REPO_URL:-$(git -C "$REPO_ROOT" remote get-url origin)}"
 REPO_REF="${REPO_REF:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
-VARS_FILE="${JUMP_VARS_FILE:-site.tfvars}"
+VARS_FILE="${JUMP_VARS_FILE:-my-cluster.tfvars}"
 SESSION="educates"
 
 # The remote shell expands $HOME (a leading ~ would not survive the quoting), once, at the

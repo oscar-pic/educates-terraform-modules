@@ -4,8 +4,8 @@
 # Run it on the machine you deploy from (workstation or jump host), from any directory:
 #
 #   set -a; . proxmox.env; set +a                  # TF_VAR_proxmox_api_token, TF_VAR_proxmox_csi_token_secret
-#   scripts/preflight.sh --var-file site.tfvars    # before the first apply
-#   scripts/preflight.sh --var-file site.tfvars --after   # after the apply: can this machine operate the cluster?
+#   scripts/preflight.sh --var-file my-cluster.tfvars    # before the first apply
+#   scripts/preflight.sh --var-file my-cluster.tfvars --after   # after the apply: can this machine operate the cluster?
 #
 # It reads the values from your tfvars file through `tofu console` (run `tofu init` first), and
 # checks what can be checked from this machine. It changes nothing: Proxmox API calls are GETs.

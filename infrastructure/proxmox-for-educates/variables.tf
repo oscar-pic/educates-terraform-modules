@@ -74,7 +74,7 @@ variable "talos" {
   type = object({
     version            = optional(string, "v1.14.6")
     config_contract    = optional(string, "v1.14")
-    kubernetes_version = optional(string, "1.36.6")
+    kubernetes_version = optional(string, "1.37.2")
     extensions         = optional(list(string), ["siderolabs/qemu-guest-agent"])
     extra_kernel_args  = optional(list(string), [])
     ntp_servers        = optional(list(string), [])
@@ -287,7 +287,7 @@ variable "ceph_csi" {
   EOT
   type = object({
     enabled    = optional(bool, false)
-    version    = optional(string, "3.18.2")
+    version    = optional(string, "3.17.2")
     cluster_id = optional(string, "")
     monitors   = optional(list(string), [])
     user_id    = optional(string, "kubernetes")

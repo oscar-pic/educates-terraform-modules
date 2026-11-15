@@ -1,10 +1,12 @@
-# Evaluation and labs: one Proxmox host with local storage, one Talos node that is
+# Evaluation and labs: one Proxmox host with local storage, and one Talos VM that is
 # control plane and worker at the same time. Good for trying Educates out.
 #
-#   cp examples/single-host.tfvars.example single-host.tfvars   # *.tfvars is git-ignored
-#   export TF_VAR_proxmox_api_token='terraform@pve!educates=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
-#   export TF_VAR_proxmox_csi_token_secret='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'   # token of kubernetes-csi@pve
-#   tofu init && tofu apply -var-file=single-host.tfvars
+# Step by step: infrastructure/proxmox-for-educates/docs/getting-started.md
+#
+#   cp examples/single-host.tfvars.example my-cluster.tfvars   # *.tfvars is git-ignored
+#   set -a; . ~/educates/proxmox.env; set +a                   # secrets (see proxmox.env.example)
+#   tofu init && scripts/preflight.sh --var-file my-cluster.tfvars
+#   tofu plan -var-file=my-cluster.tfvars -out=plan.out && tofu apply plan.out
 
 proxmox_endpoint = "https://pve.example.com:8006/"
 proxmox_insecure = true # self-signed Proxmox certificate
@@ -13,8 +15,21 @@ cluster_name = "educates"
 
 proxmox = {
   vm_datastore    = "local-lvm"
-  image_datastore = "local" # must allow the 'import' content type
+  image_datastore = "local" # must allow the 'Import' content type
+  # Pool for the VMs, created beforehand (pveum pool add educates). The token's VM privileges go
+  # on it: Proxmox deletes per-VM ACLs when it destroys a VM (see docs/requirements.md).
+  pool = "educates"
+  # Proxmox VE 9.2 rejects tags on VM creation with pool-only privileges (Proxmox bug 7864).
+  default_tags = false
+  tags         = []
 }
+
+# Optional. These are the defaults: keep config_contract fixed after the first apply.
+# talos = {
+#   version            = "v1.14.6"
+#   config_contract    = "v1.14"
+#   kubernetes_version = "1.37.2"
+# }
 
 network = {
   cidr    = "192.168.10.0/24"
@@ -27,7 +42,8 @@ network = {
 nodes = {
   cp-01 = {
     role         = "controlplane"
-    proxmox_node = "pve"
+    proxmox_node = "pve" # the Proxmox host name
+    vm_id        = 9001  # agree on a range with the Proxmox administrator
     ip           = "192.168.10.21"
     cpu          = 8
     memory       = 32768
@@ -35,12 +51,13 @@ nodes = {
   }
 }
 
-# Free IPs in the node network for LoadBalancer Services (the Educates ingress).
+# Free IPs in the node network for LoadBalancer Services. The Educates ingress takes one of them:
+# choose it now (here 192.168.10.240) and point the wildcard DNS record *.<domain> to it.
 load_balancer = {
   ip_pools = ["192.168.10.240-192.168.10.249"]
 }
 
-# Volumes as Proxmox disks on local-lvm.
+# Volumes as Proxmox disks on local-lvm (Proxmox CSI). The CSI token secret goes in proxmox.env.
 storage = {
   default_class = "proxmox-local"
   proxmox_csi = {

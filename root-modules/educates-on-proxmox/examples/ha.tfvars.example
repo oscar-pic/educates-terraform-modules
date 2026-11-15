@@ -1,11 +1,12 @@
-# Three Proxmox hosts, three control-plane nodes behind a VIP, three workers,
-# shared storage, Proxmox HA and an optional storage network (e.g. for Ceph).
+# Production-like: three Proxmox hosts with Ceph, three control-plane nodes behind a VIP,
+# three workers, a storage network to reach Ceph, and Ceph CSI.
 #
-#   cp examples/ha.tfvars.example ha.tfvars   # *.tfvars is git-ignored
-#   export TF_VAR_proxmox_api_token='terraform@pve!educates=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
-#   export TF_VAR_proxmox_csi_token_secret='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'   # token of kubernetes-csi@pve
-#   export TF_VAR_ceph_csi_user_key="$(ceph auth get-key client.kubernetes)"
-#   tofu init && tofu apply -var-file=ha.tfvars
+# Step by step: infrastructure/proxmox-for-educates/docs/getting-started.md
+#
+#   cp examples/ha.tfvars.example my-cluster.tfvars   # *.tfvars is git-ignored
+#   set -a; . ~/educates/proxmox.env; set +a          # secrets, including the Ceph keys
+#   tofu init && scripts/preflight.sh --var-file my-cluster.tfvars
+#   tofu plan -var-file=my-cluster.tfvars -out=plan.out && tofu apply plan.out
 
 proxmox_endpoint = "https://pve.example.com:8006/"
 
@@ -13,12 +14,18 @@ cluster_name = "educates"
 
 proxmox = {
   region                 = "pve-cluster"
-  vm_datastore           = "ceph-vms" # shared, so HA can move VMs
-  image_datastore        = "cephfs"   # shared, must allow the 'import' content type
+  vm_datastore           = "ceph-vms" # shared (Ceph RBD)
+  image_datastore        = "cephfs"   # shared, must allow the 'Import' content type
   image_datastore_shared = true
-  ha_enabled             = true
-  pool                   = "educates" # existing pool, e.g. nested "lab/educates"; never created or deleted
-  # create_pool          = true       # or let the module create it (last level only) and delete it on destroy
+  image_download_node    = "pve1" # the host that downloads the image (needs Sys.AccessNetwork)
+  # Pool for the VMs, created beforehand; the token's VM privileges go on it.
+  pool = "educates" # or nested, e.g. "lab/educates"
+  # Proxmox VE 9.2 rejects tags on VM creation with pool-only privileges (Proxmox bug 7864).
+  default_tags = false
+  tags         = []
+  # Proxmox HA is optional and usually not needed: three control-plane nodes on three hosts
+  # are already redundant, and it needs Sys.Console on / (see docs/requirements.md).
+  # ha_enabled = true
 }
 
 # Keep kubeconfig and talosconfig outside the repository clone (for example on a jump host).
@@ -27,7 +34,7 @@ proxmox = {
 talos = {
   version            = "v1.14.6"
   config_contract    = "v1.14" # keep it fixed after the first apply
-  kubernetes_version = "1.36.6"
+  kubernetes_version = "1.37.2"
 }
 
 network = {
@@ -37,23 +44,25 @@ network = {
   api_vip     = "192.168.10.20"
 }
 
+# Second NIC on every node, to reach Ceph. Its MTU is inherited from the bridge.
 storage_network = {
   cidr   = "10.10.10.0/24"
   bridge = "vmbr1"
 }
 
+# Installs the Gateway API CRDs, ready for Educates' upcoming Gateway API support.
 gateway_api = {
   enabled = true
 }
 
+# Free IPs in the node network for LoadBalancer Services. The Educates ingress takes one of them:
+# choose it now and point the wildcard DNS record *.<domain> to it.
 load_balancer = {
   ip_pools = ["192.168.10.240/28"]
 }
 
-# RWO volumes as Proxmox disks on the Ceph RBD datastore (default class),
-# RWX volumes from Proxmox's CephFS through the storage network.
 # With Ceph: Ceph RBD as the default class (RWO, no per-VM disk limit), CephFS for shared
-# volumes (RWX), and Proxmox CSI as an extra class.
+# volumes (RWX), and Proxmox CSI as an extra class. Keys and token secret go in proxmox.env.
 storage = {
   default_class = "ceph-rbd"
   proxmox_csi = {
@@ -65,7 +74,7 @@ storage = {
   }
   ceph_csi = {
     enabled    = true
-    version    = "3.18.2" # 3.17.2 on x86-64-v2 hosts (3.18+ needs x86-64-v3)
+    version    = "3.17.2" # 3.18+ needs x86-64-v3 CPUs: proxmox.cpu_type = "x86-64-v3" or "host"
     cluster_id = "00000000-0000-0000-0000-000000000000" # ceph fsid
     monitors   = ["10.10.10.1:6789", "10.10.10.2:6789", "10.10.10.3:6789"]
     user_id    = "kubernetes" # or one client per driver: rbd.user_id, cephfs.user_id
@@ -74,11 +83,12 @@ storage = {
   }
 }
 
+# vm_id: agree on a range with the Proxmox administrator.
 nodes = {
-  cp-01     = { role = "controlplane", proxmox_node = "pve1", ip = "192.168.10.21", storage_ip = "10.10.10.21" }
-  cp-02     = { role = "controlplane", proxmox_node = "pve2", ip = "192.168.10.22", storage_ip = "10.10.10.22" }
-  cp-03     = { role = "controlplane", proxmox_node = "pve3", ip = "192.168.10.23", storage_ip = "10.10.10.23" }
-  worker-01 = { role = "worker", proxmox_node = "pve1", ip = "192.168.10.31", storage_ip = "10.10.10.31", cpu = 8, memory = 32768, disk_size = 100 }
-  worker-02 = { role = "worker", proxmox_node = "pve2", ip = "192.168.10.32", storage_ip = "10.10.10.32", cpu = 8, memory = 32768, disk_size = 100 }
-  worker-03 = { role = "worker", proxmox_node = "pve3", ip = "192.168.10.33", storage_ip = "10.10.10.33", cpu = 8, memory = 32768, disk_size = 100 }
+  cp-01     = { role = "controlplane", proxmox_node = "pve1", vm_id = 9001, ip = "192.168.10.21", storage_ip = "10.10.10.21" }
+  cp-02     = { role = "controlplane", proxmox_node = "pve2", vm_id = 9002, ip = "192.168.10.22", storage_ip = "10.10.10.22" }
+  cp-03     = { role = "controlplane", proxmox_node = "pve3", vm_id = 9003, ip = "192.168.10.23", storage_ip = "10.10.10.23" }
+  worker-01 = { role = "worker", proxmox_node = "pve1", vm_id = 9011, ip = "192.168.10.31", storage_ip = "10.10.10.31", cpu = 8, memory = 32768, disk_size = 100 }
+  worker-02 = { role = "worker", proxmox_node = "pve2", vm_id = 9012, ip = "192.168.10.32", storage_ip = "10.10.10.32", cpu = 8, memory = 32768, disk_size = 100 }
+  worker-03 = { role = "worker", proxmox_node = "pve3", vm_id = 9013, ip = "192.168.10.33", storage_ip = "10.10.10.33", cpu = 8, memory = 32768, disk_size = 100 }
 }
