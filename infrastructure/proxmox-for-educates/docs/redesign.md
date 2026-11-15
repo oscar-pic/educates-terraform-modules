@@ -170,6 +170,7 @@ Findings for the Educates team are collected in [educates-feedback.md](educates-
 
 
 - Proxmox HA (`proxmox.ha_enabled`) is not tested on real hardware yet: the first site runs without it.
+- Single-host evaluation topology: one Talos VM (control plane that runs workloads) is tested on the first site, with Proxmox CSI. Not tested on a standalone Proxmox host: a `local` image datastore (`image_datastore_shared = false`), Proxmox CSI on LVM-thin (`local-lvm`), and a cluster without an API VIP.
 - Proxmox cloud-init drive on local storage with Proxmox HA (live migration).
 - When Gateway API is enabled, the Cilium operator must see the Gateway API CRDs at its first start. If it starts without them, it disables the feature without reporting it. Talos applies the external manifest in the same pass as the inline one; the end-to-end test checks the result.
 - Who installs the Gateway API CRDs once Educates ships agentgateway: this module or Educates.
