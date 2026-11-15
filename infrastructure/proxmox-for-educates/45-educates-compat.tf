@@ -11,6 +11,9 @@
 # Cilium policies add up: this one gives the pods of Educates workshop namespaces
 # in-cluster egress, so the result is what Educates intends (everything allowed
 # except the metadata IP). It only selects namespaces labelled by Educates.
+# It repeats the Educates rule for traffic leaving the cluster: a policy that
+# selects a pod denies the egress it does not allow, so on its own (a labelled
+# namespace without the Educates policy) it still means the same.
 ###############################################################################
 
 resource "kubectl_manifest" "educates_workshop_egress" {
@@ -33,7 +36,10 @@ resource "kubectl_manifest" "educates_workshop_egress" {
           values   = ["environment", "session"]
         }]
       }
-      egress = [{ toEntities = ["cluster", "kube-apiserver"] }]
+      egress = [
+        { toEntities = ["cluster", "kube-apiserver"] },
+        { toCIDRSet = [{ cidr = "0.0.0.0/0", except = ["169.254.169.254/32"] }] },
+      ]
     }
   })
 

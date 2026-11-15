@@ -159,7 +159,7 @@ Caveats:
 
 Educates puts a NetworkPolicy in every workshop namespace, meaning "allow all egress except the cloud metadata IP" (`ipBlock 0.0.0.0/0 except 169.254.169.254/32`). Cilium applies `ipBlock` only to traffic leaving the cluster. So that policy also blocks workshop pods from cluster DNS, Services and the Kubernetes API: sessions fail to start or to log in. Educates 4 cannot switch it off: `sessionManager.network.blockedCidrs: []` is treated as unset.
 
-`45-educates-compat.tf` adds a Cilium policy, `educates-allow-in-cluster`, that gives in-cluster egress to pods in Educates workshop namespaces only. Cilium policies add up, so workshop pods get what Educates intends: everything except the metadata IP. It is on by default (`educates_workshop_egress_fix`). Turn it off once Educates handles Cilium. `scripts/e2e-test.sh` checks it.
+`45-educates-compat.tf` adds a Cilium policy, `educates-allow-in-cluster`, that gives in-cluster egress to pods in Educates workshop namespaces only, and repeats the Educates rule for traffic leaving the cluster. Cilium policies add up, so workshop pods get what Educates intends: everything except the metadata IP. It is on by default (`educates_workshop_egress_fix`). Turn it off once Educates handles Cilium. `scripts/e2e-test.sh` checks it.
 
 ## Things to know
 

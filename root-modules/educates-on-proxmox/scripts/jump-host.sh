@@ -31,7 +31,8 @@
 #   preflight [--after]   run scripts/preflight.sh on the jump host
 #   plan [args]           tofu plan, saved to state/plan.out; extra args go to tofu
 #                         (plan -destroy prepares a destroy, applied with `apply`)
-#   apply                 apply state/plan.out inside tmux (re-attaches if the session exists)
+#   apply                 apply state/plan.out inside a tmux session (refused while that session exists)
+#   attach                re-attach to the apply session, for example after losing the connection
 #   e2e [options]         run scripts/e2e-test.sh on the jump host (see its --help)
 #   shell                 tmux session in the root module: secrets, KUBECONFIG, TALOSCONFIG,
 #                         and $JUMP_DIR/bin in PATH (for tools you keep there, such as the educates CLI)
@@ -68,9 +69,16 @@ MOD="$D/repo/$MODULE_PATH"
 LOAD_ENV=". \"$MOD/scripts/guest-env.sh\" \"$D\""
 TF="\$(command -v tofu || command -v terraform)"
 VARS="-var-file=\"$D/$VARS_FILE\" -var=\"client_configs_dir=$D/state\""
+PLAN="$D/state/plan.out"
 
-remote() { ssh "$JUMP_HOST" "bash -lc '$JD_INIT; $1'"; }
-remote_tty() { ssh -t "$JUMP_HOST" "bash -lc '$JD_INIT; $1'"; }
+# sq: single-quote a string for a shell. dq: double-quote it, leaving $ live (for $JD).
+sq() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+dq() { printf '"%s"' "${1//\"/\\\"}"; }
+# Extra arguments, each quoted, to append to a remote command.
+args() { local a; for a in "$@"; do printf ' %s' "$(sq "$a")"; done; }
+
+remote() { ssh "$JUMP_HOST" "bash -lc $(sq "$JD_INIT; $1")"; }
+remote_tty() { ssh -t "$JUMP_HOST" "bash -lc $(sq "$JD_INIT; $1")"; }
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
@@ -99,25 +107,38 @@ EOF
       set -e
       cd \"$D/repo\"
       git fetch --quiet --tags origin
-      git checkout --quiet --detach \"$ref\" 2>/dev/null || git checkout --quiet --detach \"origin/$ref\"
+      # origin/<branch> first: a local branch of the same name may be stale.
+      git checkout --quiet --detach \"origin/$ref\" 2>/dev/null || git checkout --quiet --detach \"$ref\"
       echo \"Checked out \$(git rev-parse --short HEAD) (\$(git log -1 --format=%s))\"
       cd \"$MOD\" && $LOAD_ENV && $TF init -input=false >/dev/null && echo \"init done\"
     "
     ;;
   preflight)
-    remote_tty "cd \"$MOD\" && $LOAD_ENV && scripts/preflight.sh --var-file \"$D/$VARS_FILE\" --client-configs-dir \"$D/state\" $*"
+    remote_tty "cd \"$MOD\" && $LOAD_ENV && scripts/preflight.sh --var-file \"$D/$VARS_FILE\" --client-configs-dir \"$D/state\"$(args "$@")"
     ;;
   plan)
-    remote_tty "cd \"$MOD\" && $LOAD_ENV && $TF plan -input=false $VARS $* -out=\"$D/state/plan.out\""
+    remote_tty "cd \"$MOD\" && $LOAD_ENV && $TF plan -input=false $VARS$(args "$@") -out=\"$PLAN\""
     ;;
   apply)
-    remote_tty "tmux new -A -s $SESSION \"cd $MOD && $LOAD_ENV && $TF apply $D/state/plan.out; rm -f $D/state/plan.out; exec bash\""
+    # Runs inside tmux, so a lost connection does not interrupt it. tofu is looked up there,
+    # after guest-env.sh (it may live in $JUMP_DIR/bin). The plan is removed once applied.
+    run="cd \"$MOD\" && $LOAD_ENV && \\$TF apply \"$PLAN\" && rm -f \"$PLAN\"; exec bash"
+    remote_tty "
+      if tmux has-session -t $SESSION 2>/dev/null; then
+        echo \"tmux session '$SESSION' exists: '$0 attach' to see it; exit its shell to close it.\"; exit 1
+      fi
+      [ -f \"$PLAN\" ] || { echo \"No saved plan: run '$0 plan' first.\"; exit 1; }
+      tmux new -s $SESSION $(dq "$run")
+    "
+    ;;
+  attach)
+    remote_tty "tmux attach -t $SESSION"
     ;;
   e2e)
-    remote_tty "cd \"$MOD\" && $LOAD_ENV && scripts/e2e-test.sh $*"
+    remote_tty "cd \"$MOD\" && $LOAD_ENV && scripts/e2e-test.sh$(args "$@")"
     ;;
   shell)
-    remote_tty "tmux new -A -s $SESSION-shell \"cd $MOD && $LOAD_ENV && exec bash\""
+    remote_tty "tmux new -A -s $SESSION-shell $(dq "cd \"$MOD\" && $LOAD_ENV && exec bash")"
     ;;
   ssh)
     exec ssh -t "$JUMP_HOST"

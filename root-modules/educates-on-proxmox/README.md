@@ -68,7 +68,7 @@ Secrets come from the environment, never from the tfvars file:
 |---|---|
 | `scripts/preflight.sh` | Checks the deploying machine before an apply: tools, Proxmox API, token privileges, datastores, pool, network, internet. `--after`: whether it reaches the cluster |
 | `scripts/e2e-test.sh` | Tests a deployed cluster: storage, LoadBalancer, network, the Educates workshop network and, with `--workshop`, a real Educates session. Deletes what it creates |
-| `scripts/jump-host.sh` | Runs everything on a jump host over SSH (`setup`, `preflight`, `plan`, `apply`, `e2e`, `shell`) |
+| `scripts/jump-host.sh` | Runs everything on a jump host over SSH (`setup`, `sync`, `preflight`, `plan`, `apply`, `attach`, `e2e`, `shell`) |
 | `scripts/guest-env.sh` | Sourced on a jump host: keeps every tool inside the work directory (its own `HOME`), and loads the secrets, `KUBECONFIG` and `TALOSCONFIG` |
 
 Each script describes its options with `--help`.

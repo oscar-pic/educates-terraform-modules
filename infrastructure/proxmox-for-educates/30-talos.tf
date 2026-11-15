@@ -21,6 +21,7 @@ data "helm_template" "cilium" {
 
   values = compact([
     templatefile("${path.module}/templates/cilium-values.yaml.tftpl", {
+      # The Cilium operator tolerates control-plane taints: every node counts.
       operator_replicas   = length(var.nodes) > 1 ? 2 : 1
       gateway_api_enabled = var.gateway_api.enabled
       hubble_enabled      = var.cilium.hubble_enabled

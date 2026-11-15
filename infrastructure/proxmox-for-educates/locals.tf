@@ -47,7 +47,10 @@ locals {
 
 # Cluster services
 locals {
-  replicas = min(2, length(var.nodes))
+  # Controllers of the storage drivers run where workloads run: workers, plus the control
+  # planes when they are schedulable. Two replicas when there is room for them.
+  schedulable_nodes = length(local.worker_nodes) + (local.schedulable_control_planes ? length(var.nodes) - length(local.worker_nodes) : 0)
+  replicas          = max(1, min(2, local.schedulable_nodes))
 
   proxmox_csi_classes = var.proxmox_csi.enabled ? [for c in var.proxmox_csi.storage_classes : c.name] : []
   ceph_rbd_enabled    = var.ceph_csi.enabled && var.ceph_csi.rbd.enabled

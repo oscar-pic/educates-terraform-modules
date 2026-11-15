@@ -113,11 +113,10 @@ variable "network" {
 variable "storage_network" {
   description = "Optional second NIC for a dedicated storage network (Ceph, NFS). Each node then needs storage_ip."
   type = object({
-    cidr      = string
-    bridge    = string
-    vlan_id   = optional(number)
-    mtu       = optional(number, 1) # 1 = inherit the bridge MTU (set 9000 only if the bridge has it)
-    interface = optional(string, "eth1")
+    cidr    = string
+    bridge  = string
+    vlan_id = optional(number)
+    mtu     = optional(number, 1) # 1 = inherit the bridge MTU (set 9000 only if the bridge has it)
   })
   default = null
 }
@@ -221,11 +220,11 @@ variable "load_balancer" {
   description = <<-EOT
     LoadBalancer IPs announced by Cilium on the node network (ARP).
     - ip_pools: CIDRs ("192.168.10.200/29") or ranges ("192.168.10.200-192.168.10.210"), free in the node network.
-    - interfaces: regular expressions of the node interfaces that answer ARP.
+    - interfaces: regular expressions of the node interfaces that answer ARP (default: network.interface).
   EOT
   type = object({
     ip_pools   = list(string)
-    interfaces = optional(list(string), ["^eth0$"])
+    interfaces = optional(list(string))
   })
 
   validation {

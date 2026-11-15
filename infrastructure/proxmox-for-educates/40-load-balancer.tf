@@ -26,7 +26,7 @@ resource "kubectl_manifest" "l2_announcement_policy" {
     kind       = "CiliumL2AnnouncementPolicy"
     metadata   = { name = "default" }
     spec = {
-      interfaces      = var.load_balancer.interfaces
+      interfaces      = coalesce(var.load_balancer.interfaces, ["^${var.network.interface}$"])
       loadBalancerIPs = true
       externalIPs     = false
     }

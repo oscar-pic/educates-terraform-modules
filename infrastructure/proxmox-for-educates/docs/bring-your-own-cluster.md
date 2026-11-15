@@ -117,6 +117,9 @@ spec:
       values: [environment, session]
   egress:
   - toEntities: [cluster, kube-apiserver]
+  - toCIDRSet:                          # the Educates rule, so the policy means the same on its own
+    - cidr: 0.0.0.0/0
+      except: [169.254.169.254/32]
 ```
 
 With another CNI (for example Calico, which matches pod IPs with `ipBlock`), this is not needed.

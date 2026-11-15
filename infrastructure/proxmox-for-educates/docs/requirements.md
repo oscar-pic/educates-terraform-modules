@@ -206,7 +206,8 @@ scripts/jump-host.sh setup       # layout, clone at your current (pushed) commit
 # on the jump host: copy my-cluster.tfvars and proxmox.env into the work directory
 scripts/jump-host.sh preflight   # checks, run on the jump host
 scripts/jump-host.sh plan        # saved to state/plan.out
-scripts/jump-host.sh apply       # inside tmux: an SSH drop does not stop it; run again to re-attach
+scripts/jump-host.sh apply       # inside tmux: an SSH drop does not stop it
+scripts/jump-host.sh attach      # re-attach to it; exit its shell when done
 scripts/jump-host.sh shell       # tmux shell with the secrets, KUBECONFIG and TALOSCONFIG loaded
 scripts/jump-host.sh sync <ref>  # deploy another commit later
 ```

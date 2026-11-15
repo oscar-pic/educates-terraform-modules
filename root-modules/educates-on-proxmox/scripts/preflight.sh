@@ -178,7 +178,8 @@ https_code() {
 NODE_KEYS="$(cfg '.nodes | keys[]')"
 node_ip() { cfg --arg k "$1" '.nodes[$k].ip'; }
 API_VIP="$(cfg '.network.api_vip // empty')"
-FIRST_CP="$(cfg '[.nodes | to_entries[] | select(.value.role == "controlplane") | .value.ip] | sort | first // empty')"
+# The first control-plane key in alphabetical order: the node the module bootstraps (and its API endpoint without a VIP).
+FIRST_CP="$(cfg '[.nodes | to_entries[] | select(.value.role == "controlplane")] | sort_by(.key) | first | .value.ip // empty')"
 API_HOST="${API_VIP:-$FIRST_CP}"
 
 ###############################################################################

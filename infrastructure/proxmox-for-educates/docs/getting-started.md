@@ -135,7 +135,7 @@ Then, from your workstation:
 ```shell
 scripts/jump-host.sh preflight   # the checks, run on the jump host: fix every FAIL
 scripts/jump-host.sh plan        # review what will be created
-scripts/jump-host.sh apply       # runs inside tmux; run it again to re-attach
+scripts/jump-host.sh apply       # runs inside tmux; `attach` re-attaches, exit its shell when done
 scripts/jump-host.sh e2e         # storage, LoadBalancer, network: all PASS
 scripts/jump-host.sh shell       # a shell there, with KUBECONFIG and TALOSCONFIG set
 ```
