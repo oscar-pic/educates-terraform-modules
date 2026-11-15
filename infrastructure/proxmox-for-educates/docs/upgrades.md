@@ -26,6 +26,12 @@ Edit the variables and run `tofu apply`. `talos_machine` re-applies the new mach
 
 `talos_cluster` then runs Talos's `upgrade-k8s`: it upgrades the API server, controller manager and scheduler, then the kubelet node by node, with health checks between steps. No node reboots.
 
+What to expect, measured on a 3 + 3 node cluster going from 1.36.6 to 1.37.2:
+
+- **Duration.** About 9 minutes.
+- **The node configurations.** The plan also shows every `talos_machine` changing. That only updates the state: with `ignore_kubernetes_upgrade_drift`, the provider does not push the new Kubernetes images to the nodes, so `upgrade-k8s` alone upgrades them, in order.
+- **An API outage of about 40 seconds through the VIP.** It happens when the API server of the node holding the VIP restarts. The VIP stays on its node while the node is alive: it is a floating IP, not a load balancer. External clients (`kubectl`, CI) see this gap. Workloads inside the cluster do not: they reach the API through KubePrism, which balances across the API servers. Educates kept answering during the whole upgrade.
+
 ## Upgrading Talos
 
 Talos OS upgrades reboot the node. They are done with `talosctl`, **one node per command**, so etcd never loses quorum.
