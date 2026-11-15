@@ -121,8 +121,15 @@ if have talosctl; then
   if talosctl health --wait-timeout 2m >/dev/null 2>&1; then pass "talosctl health"; else fail "talosctl health (run it by hand to see why)"; fi
 fi
 
-BAD=$(kubectl -n kube-system get pods --no-headers 2>/dev/null | grep -v -E 'Running|Completed' | grep -c .)
-[ "$BAD" -eq 0 ] && pass "kube-system: all pods Running" || fail "kube-system: $BAD pods not Running"
+# Allow up to 2 minutes for pods to settle (for example right after a node reboot).
+for _ in $(seq 1 24); do
+  BAD=$(kubectl -n kube-system get pods --no-headers 2>/dev/null | grep -v -E 'Running|Completed' | grep -c .)
+  [ "$BAD" -eq 0 ] && break; sleep 5
+done
+if [ "$BAD" -eq 0 ]; then pass "kube-system: all pods Running"; else
+  fail "kube-system: $BAD pods not Running"
+  kubectl -n kube-system get pods --no-headers | grep -v -E 'Running|Completed' | sed 's/^/       /'
+fi
 
 DEFAULT_SC=$(kubectl get storageclass -o json | jq -r '[.items[] | select(.metadata.annotations["storageclass.kubernetes.io/is-default-class"] == "true") | .metadata.name] | join(" ")')
 case "$(echo "$DEFAULT_SC" | wc -w | tr -d ' ')" in
