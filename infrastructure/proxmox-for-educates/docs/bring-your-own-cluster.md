@@ -4,6 +4,8 @@ For when you already run Talos Linux on Proxmox VE, or prefer to build the clust
 
 The modules in this repository build the cluster *and* the pieces Educates needs on top of it. This page lists those pieces, so you can add them to your own cluster by hand. Then check the result with the same end-to-end test, and install Educates as in [getting-started.md](getting-started.md#5-install-educates).
 
+This page is written for Talos on Proxmox. Most of it also applies to other Kubernetes distributions on premises, especially with Cilium: LoadBalancer IPs, the workshop network policy, the end-to-end test. For Educates on other platforms, see the [Educates installation guides](https://github.com/educates/educates-training-platform/tree/develop/project-docs/installation-guides).
+
 ## What Educates needs from the cluster
 
 | Need | Why | Section |
@@ -121,7 +123,7 @@ With another CNI (for example Calico, which matches pod IPs with `ipBlock`), thi
 
 ## Check the cluster
 
-`scripts/e2e-test.sh` works with any cluster, not only one built by these modules. Point it at your kubeconfig:
+`scripts/e2e-test.sh` works with any Kubernetes cluster, not only one built by these modules. Without `talosctl` it only skips the Talos health check. Point it at your kubeconfig:
 
 ```shell
 git clone https://github.com/educates/educates-terraform-modules.git

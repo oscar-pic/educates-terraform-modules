@@ -21,6 +21,8 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 | 8 | Gateway API: CRD ownership and fixed addresses | Design input for the upcoming Gateway API support | — |
 | 9 | `platform delete --purge` leaves resources behind, and can strand SecretCopiers | Uninstall needs manual steps | Documented uninstall order |
 | 10 | The training portal is a single replica with a `ReadWriteOnce` volume | Portal down for about 2 minutes whenever its node is drained (upgrades, maintenance) | Documented: upgrade outside class hours |
+| 11 | Proposal: a documentation section for on-premises clusters | Most findings here are not specific to Proxmox or Talos | — |
+| 12 | Proposal: a cluster readiness check in the Educates CLI | Users find cluster problems only when a workshop fails | `scripts/e2e-test.sh` in this repository |
 
 ## 1. Workshop NetworkPolicy blocks in-cluster traffic on Cilium
 
@@ -150,3 +152,29 @@ The portal answered 503 for about 2 min 20 s, then came back with its data intac
 **Why it matters.** Kubernetes and Talos upgrades, and any node maintenance, are routine on a multi-node cluster. Here the rest of the stack stayed up through them: the API through KubePrism, the ingress, the workshop sessions.
 
 **Possible fixes.** Portal high availability: more than one replica, with a database that allows it (an external PostgreSQL, or a `ReadWriteMany` volume if the portal can share it safely). Or a PodDisruptionBudget plus a quicker hand-over. At least, document it as a maintenance-window consideration.
+
+## 11. Proposal: a documentation section for on-premises clusters
+
+Most findings in this document are not specific to Proxmox or Talos. They apply to any on-premises cluster, whether on bare metal, VMware or another hypervisor, and many to any cluster with Cilium (including GKE Dataplane V2):
+
+- the workshop NetworkPolicy on Cilium (item 1);
+- pinning the ingress IP with an in-cluster IPAM: Cilium LB-IPAM, MetalLB, kube-vip (item 3);
+- on-premises DNS for the wildcard record (item 4);
+- browsers must trust the CA: accepting a warning on the portal is not enough, because session requests to other host names fail silently;
+- the first session on a node exceeding the default startup timeout (item 6);
+- uninstall leftovers (item 9);
+- the single-replica portal during node maintenance (item 10).
+
+A section like "Installing on premises" in the Educates installation guides would reach users of every platform. Infrastructure repositories like this one only reach users of one provider.
+
+## 12. Proposal: a cluster readiness check in the Educates CLI
+
+`root-modules/educates-on-proxmox/scripts/e2e-test.sh` in this repository checks any cluster before and after installing Educates. It runs in about 2 minutes, and cleans up everything it creates:
+
+- a default StorageClass, with a volume created, written and deleted;
+- `LoadBalancer` Services getting an IP and answering;
+- pod DNS and egress;
+- a replica of the Educates workshop namespace and NetworkPolicy reaching cluster DNS, Services and the API;
+- with Educates installed, a real workshop session over HTTPS.
+
+Today users discover these problems when a workshop fails. Something like `educates admin cluster check` in the Educates CLI, built from these checks, would tell them before they install, on any platform. The script is offered as a starting point.
