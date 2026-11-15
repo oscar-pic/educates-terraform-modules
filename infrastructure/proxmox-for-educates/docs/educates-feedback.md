@@ -19,6 +19,7 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 | 6 | Default startup timeout vs. first image pull | First session on a node times out | Documented `--overdue`, `--reserved` |
 | 7 | Reserved sessions not created after recreating a portal | To confirm | — |
 | 8 | Gateway API: CRD ownership and fixed addresses | Design input for the upcoming Gateway API support | — |
+| 9 | `platform delete --purge` leaves resources behind, and can strand SecretCopiers | Uninstall needs manual steps | Documented uninstall order |
 
 ## 1. Workshop NetworkPolicy blocks in-cluster traffic on Cilium
 
@@ -114,3 +115,18 @@ Also in the portal log, at start-up: kopf cannot list CRDs (`customresourcedefin
 
 - **Fixed address.** `Gateway.spec.addresses` (type `IPAddress`) and `Gateway.spec.infrastructure.annotations` / `labels` cover what item 3 asks for Envoy. Exposing them in the Educates Gateway configuration would solve it the standard way. To check: whether agentgateway honours them.
 - **CRD ownership.** These modules can install the Gateway API standard CRDs (`gateway_api.enabled`), which Cilium also needs when its Gateway API support is on. Agree who installs and upgrades them when Educates bundles agentgateway, so the two do not fight over versions.
+
+## 9. Uninstall leaves resources behind
+
+**Seen.** Uninstalling with `kubectl delete trainingportals --all` followed at once by `educates admin platform delete --yes --purge` left three things behind:
+
+- **The `educates` namespace**, labelled `app.kubernetes.io/managed-by: educates-installer`, still holding the `educates-registry-hosts` ConfigMap.
+- **The runtime CRDs** (`training.educates.dev`, `secrets.educates.dev`). This one is documented.
+- **Four `SecretCopier` objects** (ingress secret and website theme, for the portal and the workshop environment), stuck with the `kopf.zalando.org/KopfFinalizerMarker` finalizer. The platform was removed before the secrets manager had cleaned them up, so nothing could remove the finalizer, and deleting their CRD hung until it was removed by hand.
+
+**Possible fixes.**
+
+- `platform delete` waits for, or deletes, the SecretCopiers (and other kopf-managed objects) while the secrets manager still runs, or refuses while portals still exist.
+- `--purge` removes the `educates` namespace it created.
+
+**Here.** The getting-started guide documents the order: portals, then wait for the SecretCopiers to disappear, then the platform, then the namespace and CRDs.

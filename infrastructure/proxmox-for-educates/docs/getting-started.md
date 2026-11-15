@@ -356,8 +356,29 @@ Open the portal URL in a browser that trusts `ca.crt`, and start the workshop. T
 
 > Educates 4 is in alpha, and its configuration may change between releases: check the guides of the version you install. Gateway API support (with agentgateway) is coming to Educates. This cluster can install the Gateway API CRDs already (`gateway_api.enabled`).
 
+## Uninstall Educates
+
+Do it before destroying the cluster. Every workshop volume is then deleted by its CSI driver while the cluster still runs. Volumes left behind become orphan disks in Proxmox, or images and subvolumes in Ceph.
+
+```shell
+# 1. Portals: their workshops, sessions and the portal's own volume go with them.
+kubectl delete trainingportals --all --wait=true
+# 2. Wait until Educates has cleaned up what it copied for them (do not skip:
+#    without its secrets manager, these objects can never finish deleting).
+kubectl get secretcopiers.secrets.educates.dev        # until empty
+# 3. The platform: operator, Contour, Kyverno, and with --purge its CRDs and namespaces.
+educates admin platform delete --yes --purge
+# 4. What Educates 4 leaves behind: the "educates" namespace and the runtime CRDs.
+kubectl delete namespace educates --ignore-not-found
+kubectl get crd -o name | grep -E '\.educates\.dev$' | xargs -r kubectl delete
+# 5. Check: no volumes left.
+kubectl get pv
+```
+
+Then destroy the cluster, if you want to: see [upgrades.md](upgrades.md#destroying-a-cluster).
+
 ## Next
 
 - Day-2 operations: [upgrades.md](upgrades.md). Talos upgrades are done one node at a time with `talosctl`; Kubernetes upgrades by changing `talos.kubernetes_version`.
 - Design and open points: [redesign.md](redesign.md).
-- Removing everything: uninstall Educates first (`educates admin platform delete`), then `tofu destroy` with the same tfvars file.
+- Removing everything: [uninstall Educates](#uninstall-educates), then [destroy the cluster](upgrades.md#destroying-a-cluster).
