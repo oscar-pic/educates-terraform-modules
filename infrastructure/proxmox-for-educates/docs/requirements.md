@@ -62,7 +62,7 @@ If the VM datastore and the image datastore are the same storage, one ACL with t
 
 `scripts/preflight.sh` checks the pool for either case, and the token's privileges.
 
-**Tags.** By default the module tags each VM ("talos", the cluster name, its role, plus `proxmox.tags`). Proxmox checks tags on VM creation against `/vms/<id>` only, ignoring privileges on the pool. With VM privileges on the pool only, set `proxmox.default_tags = false` and `proxmox.tags = []`: the VMs then have no tags, and the pool groups them. `scripts/preflight.sh` catches this combination.
+**Tags.** By default the module tags each VM ("talos", the cluster name, its role, plus `proxmox.tags`). Proxmox VE 9.2 checks tags on VM creation against `/vms/<id>` only, ignoring privileges on the pool (a regression, [Proxmox bug 7864](https://bugzilla.proxmox.com/show_bug.cgi?id=7864), still present in 9.2.26). With VM privileges on the pool only, set `proxmox.default_tags = false` and `proxmox.tags = []`: the VMs then have no tags, and the pool groups them. `scripts/preflight.sh` catches this combination.
 
 **VM IDs.** With privileges on the pool, Proxmox does not restrict which VM IDs the token uses. Agree on a range with the Proxmox administrator and set `nodes[*].vm_id` within it.
 
