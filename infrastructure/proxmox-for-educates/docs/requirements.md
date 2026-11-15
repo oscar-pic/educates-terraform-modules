@@ -20,8 +20,21 @@ What you need before deploying Educates on Proxmox VE with these modules. Gather
 - **An image datastore** with the `Import` content type enabled (Datacenter → Storage → *datastore* → Content). `local` works. On a Proxmox cluster, a shared datastore such as CephFS or NFS avoids one download per host.
 - **A VM datastore** for VM disks, EFI disks and cloud-init drives. With Proxmox HA it must be shared (Ceph RBD, NFS, iSCSI…).
 - **A resource pool** (recommended) for the cluster's VMs, created by the Proxmox administrator. Its name is an input, for example `educates` or, nested, `lab/educates`. See [Resource pool](#credentials).
-- **Proxmox HA** (optional): an existing Proxmox cluster with quorum. The VMs must use shared storage to move between hosts.
+- **Proxmox HA** (optional, usually not needed): see [Proxmox HA](#proxmox-ha-optional).
 - **CPU.** VMs use `x86-64-v2-AES` by default. With `host`, live migration only works between identical CPUs. Talos, Cilium, Proxmox CSI and Educates run on x86-64-v2. **ceph-csi 3.18 and later need x86-64-v3 (AVX2)**: on older CPUs, use ceph-csi 3.17.x.
+
+## Proxmox HA (optional)
+
+`proxmox.ha_enabled = true` registers every VM as a Proxmox HA resource: if a host fails, Proxmox starts its VMs on another host. It needs:
+
+- a Proxmox cluster with quorum;
+- shared storage for the VMs;
+- free capacity on the remaining hosts;
+- `Sys.Console` and `Sys.Audit` on `/` for the token.
+
+Proxmox does not allow narrowing those privileges, and they give console access to every VM and host. A provider will normally not grant them.
+
+Usually you do not need it. A cluster with three control-plane nodes and several workers, spread over different Proxmox hosts, is already redundant: Kubernetes keeps running when a host fails. The VMs of the failed host start again when it comes back. Proxmox HA fits single-VM services better, and it is the Proxmox administrator's decision. The first real deployment runs without it, at the provider's request.
 
 ## Sizing
 
@@ -51,7 +64,7 @@ Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` 
 | `/storage/<image-datastore>` | `Datastore.AllocateTemplate`, `Datastore.AllocateSpace`, `Datastore.Audit`, `Datastore.Allocate` | Download and import the Talos image, and **delete** it when a Talos upgrade replaces it or the cluster is destroyed. On a shared datastore, `Datastore.Allocate` also allows deleting other files there. Without it, those deletions fail with HTTP 403: drop the image from the state (`tofu state rm 'module.cluster.proxmox_download_file.talos["<node>"]'`) and let the Proxmox administrator delete the file |
 | `/nodes/<node>` for each node that downloads the image | `Sys.AccessNetwork`, `Sys.Audit` | Download from a URL. This lets the host fetch any URL it can reach. With a shared image datastore, one node downloads: `proxmox.image_download_node`, or else the first, in alphabetical order, of the Proxmox nodes that host VMs (which changes with the topology). Otherwise every node that hosts a VM downloads |
 | `/sdn/zones/localnetwork/<bridge>` (plain Linux bridge), or `/sdn/zones/<zone>/<vnet>` (SDN VNet) | `SDN.Use` (role `PVESDNUser`) | Attach the NICs. Needed for every bridge used, including the storage network. Since Proxmox VE 8, plain bridges need it too |
-| `/` | `Sys.Audit`, `Sys.Console` | Only with `proxmox.ha_enabled`: Proxmox requires them on `/` to create HA resources. `Sys.Console` on `/` also grants console access to every VM, so some sites will not grant it. Without it, leave `ha_enabled = false`: Kubernetes still tolerates the loss of a host with three control-plane nodes on three hosts |
+| `/` | `Sys.Audit`, `Sys.Console` | Only with `proxmox.ha_enabled` (optional): Proxmox requires them on `/` to manage HA resources, and does not allow narrowing them to a pool or to VM IDs. `Sys.Console` on `/` gives console access to the whole infrastructure, so a Proxmox provider will normally not grant it. See [Proxmox HA](#proxmox-ha-optional) |
 
 If the VM datastore and the image datastore are the same storage, one ACL with the image privileges covers both.
 
