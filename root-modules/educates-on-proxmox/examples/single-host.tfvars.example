@@ -19,6 +19,9 @@ proxmox = {
 network = {
   cidr    = "192.168.10.0/24"
   gateway = "192.168.10.1"
+  # Optional with one control-plane node, but set it if the cluster may grow to three:
+  # the API endpoint is fixed when the cluster is created (see docs/upgrades.md, Scaling).
+  # api_vip = "192.168.10.20"
 }
 
 nodes = {

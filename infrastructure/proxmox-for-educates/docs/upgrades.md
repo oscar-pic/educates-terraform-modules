@@ -82,6 +82,8 @@ CoreDNS runs two replicas that may land on the same node. Give it a PodDisruptio
 ## Scaling
 
 - **Adding a node.** Add it to `nodes` and apply. It joins at `talos.kubernetes_version`.
+- **Going from one to three control-plane nodes.** Add two `controlplane` nodes, preferably on different Proxmox hosts, and apply. The new nodes join etcd, and the existing nodes are not changed or rebooted. This needs `network.api_vip` set **from the start**: the cluster endpoint is fixed when the cluster is created. Without a VIP it is the first node's IP, and growing then means rebuilding the cluster. If a single-node cluster may grow, give it a VIP anyway.
+- **Checking control-plane failover.** Reboot the node that holds the VIP (`talosctl -n <ip> get addresses` shows it) while polling `https://<vip>:6443/version`. Any HTTP answer, including 401, means the API is up. The VIP moves to another control-plane node, and the API keeps answering.
 - **Removing a worker.** Drain it first, then remove it from `nodes`.
 - **Removing a control-plane node.** Remove it from etcd first (`talosctl -n <node-ip> reset --graceful`), and keep an odd number of control-plane nodes.
 

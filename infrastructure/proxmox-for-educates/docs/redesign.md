@@ -149,6 +149,9 @@ Verified:
 - PVC deletion with `reclaimPolicy: Delete` removes the Proxmox disk.
 - The Educates operator on Talos with the bundled Kyverno and Contour, with the Envoy `LoadBalancer` Service on a Cilium L2 IP.
 - MTU on an SDN VNet with `network.mtu = 1`: the VMs inherit the VNet MTU.
+- Control-plane HA. Going from 1 to 3 control-plane nodes (one per Proxmox host) was a plain `apply`: 2 VMs and their Talos configuration, with no change to the existing nodes. etcd ended with 3 voting members.
+- Control-plane failover. Rebooting the node that was etcd leader and VIP holder moved the VIP to another node. The API through the VIP and the Educates portal never stopped answering (2-second polling during the whole reboot), and etcd elected a new leader.
+- `scripts/e2e-test.sh --workshop` passes on both topologies.
 
 Fixes the deployment needed, all in the module now:
 
