@@ -87,6 +87,32 @@ CoreDNS runs two replicas that may land on the same node. Give it a PodDisruptio
 - **Removing a worker.** Drain it first, then remove it from `nodes`.
 - **Removing a control-plane node.** Remove it from etcd first (`talosctl -n <node-ip> reset --graceful`), and keep an odd number of control-plane nodes.
 
+## Adding a storage network to a running cluster
+
+To reach Ceph (or NFS) over a dedicated network, add `storage_network` and a `storage_ip` per node. On a running cluster, this changes things that only apply at boot.
+
+What happens on `apply`:
+
+- **Proxmox hot-plugs the second NIC** and regenerates the cloud-init drive. The module never lets the provider reboot a node (`reboot_after_update = false`).
+- **Talos reads the cloud-init network (nocloud) only at boot.** The new interface has no address until the node reboots.
+- **Kernel modules** (`rbd`, `ceph`, `libceph`, added when Ceph CSI is enabled) **load live**, with no reboot.
+- **etcd and the kubelet stay on the node network.** The module pins etcd's `advertisedSubnets` and the kubelet's `nodeIP` to `network.cidr`, so a second address never changes the cluster membership.
+
+Procedure:
+
+1. Add `storage_network` and the `storage_ip` values (Ceph CSI still disabled). Plan: the VMs and the Talos configuration change in place, and nothing is replaced. Apply.
+2. Reboot the nodes **one at a time**: control-plane nodes first, the one holding the API VIP last, then the workers.
+
+   ```shell
+   talosctl -n <ip> reboot                      # waits until the node is back
+   talosctl -n <ip> get addresses | grep <storage network prefix>
+   talosctl -n <ip> etcd members                 # control-plane nodes: 3 members, unchanged peer URLs
+   kubectl get nodes                             # all Ready before the next node
+   ```
+
+3. Check that every node reaches the storage network: Ceph monitors on TCP 3300 or 6789.
+4. Enable Ceph CSI and apply. Then `scripts/e2e-test.sh --all-storage-classes`.
+
 ## Notes
 
 - **Discovery service.** Without the public Talos discovery service (air-gapped clusters, or disabled by policy), `talosctl get members` returns nothing. That is normal. Use `talosctl health` instead.

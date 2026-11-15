@@ -41,9 +41,13 @@ locals {
     # Talos merges maps, so removing the default control-plane taint means deleting
     # the document and adding it back (lesson 2).
     delete_node_config = { apiVersion = "v1alpha1", kind = "KubeNodeConfig", "$patch" = "delete" }
+    # etcd must advertise its node-network address. With a second NIC (storage_network),
+    # it could otherwise pick the storage address after a reboot and break the membership.
+    etcd_subnets = { cluster = { etcd = { advertisedSubnets = [var.network.cidr] } } }
   } : k => yamlencode(v) }
 
   controlplane_patches = compact([
+    local.yaml_docs.etcd_subnets,
     local.yaml_docs.no_flannel,
     local.yaml_docs.no_kube_proxy,
     local.yaml_docs.cilium,
