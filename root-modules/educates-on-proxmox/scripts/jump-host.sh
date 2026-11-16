@@ -91,6 +91,9 @@ case "$cmd" in
       mkdir -p \"$D/state\" && chmod 700 \"$D/state\"
       if [ ! -d \"$D/repo/.git\" ]; then git clone --quiet \"$REPO_URL\" \"$D/repo\"; fi
       git -C \"$D/repo\" remote set-url --push origin no-push
+      # Check out REPO_REF before writing into the module: it may not exist on the default branch.
+      git -C \"$D/repo\" fetch --quiet --tags origin
+      git -C \"$D/repo\" checkout --quiet --detach \"origin/$REPO_REF\" 2>/dev/null || git -C \"$D/repo\" checkout --quiet --detach \"$REPO_REF\"
       [ -f \"$MOD/backend_override.tf\" ] || cat > \"$MOD/backend_override.tf\" <<EOF
 terraform {
   backend \"local\" {
