@@ -58,4 +58,5 @@ terraform.rc
 
 # Site-specific files (copies of the *.example templates)
 jump-host.env
+jump-host.*.env
 proxmox.env

@@ -5,7 +5,8 @@
 # Everything runs on the jump host; nothing site-specific is stored in the repository.
 #
 # Configuration: environment variables, or a git-ignored file `jump-host.env` next to this
-# root module (copy jump-host.env.example):
+# root module (copy jump-host.env.example). With several clusters, keep one file per cluster
+# (jump-host.<name>.env, also git-ignored) and select it with JUMP_ENV=jump-host.<name>.env.
 #
 #   JUMP_HOST   SSH destination: host, user@host or an alias from ~/.ssh/config (required)
 #   JUMP_DIR    working directory on the jump host (default: ~/educates)
@@ -45,9 +46,11 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(git -C "$MODULE_DIR" rev-parse --show-toplevel)"
 MODULE_PATH="${MODULE_DIR#"$REPO_ROOT"/}"
 
-if [ -f "$MODULE_DIR/jump-host.env" ]; then
-  # shellcheck disable=SC1091
-  . "$MODULE_DIR/jump-host.env"
+JUMP_ENV="${JUMP_ENV:-jump-host.env}"
+case "$JUMP_ENV" in /*) ;; *) JUMP_ENV="$MODULE_DIR/$JUMP_ENV" ;; esac
+if [ -f "$JUMP_ENV" ]; then
+  # shellcheck disable=SC1090
+  . "$JUMP_ENV"
 fi
 
 : "${JUMP_HOST:?Set JUMP_HOST (in jump-host.env or the environment)}"
