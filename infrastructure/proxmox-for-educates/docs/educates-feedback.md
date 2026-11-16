@@ -23,7 +23,7 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 | 10 | The training portal is a single replica with a `ReadWriteOnce` volume | Portal down for about 2 minutes whenever its node is drained (upgrades, maintenance) | Documented: upgrade outside class hours |
 | 11 | Proposal: a documentation section for on-premises clusters | Most findings here are not specific to Proxmox or Talos | — |
 | 12 | Proposal: a cluster readiness check in the Educates CLI | Users find cluster problems only when a workshop fails | `scripts/e2e-test.sh` in this repository |
-| 13 | Lookups of the bare name `contour` leak to the site DNS | None functionally; noise in the DNS servers' logs | — |
+| 13 | The bundled Envoy looks up the bare name `contour` in the site DNS, every few seconds | None functionally; constant noise in the DNS servers' logs | — |
 
 ## 1. Workshop NetworkPolicy blocks in-cluster traffic on Cilium
 
@@ -180,12 +180,22 @@ A section like "Installing on premises" in the Educates installation guides woul
 
 Today users discover these problems when a workshop fails. Something like `educates admin cluster check` in the Educates CLI, built from these checks, would tell them before they install, on any platform. The script is offered as a starting point.
 
-## 13. Lookups of the bare name `contour` leak to the site DNS
+## 13. The bundled Envoy looks up the bare name `contour` in the site DNS
 
-**What we saw.** The site's DNS servers, outside the cluster, received queries for `contour.`, the bare name with no domain, from the cluster nodes. Nothing broke. We noticed it from the DNS server side, after the cluster was gone, so we could not tell which pod made the lookups.
+**What we saw.** The site's DNS servers, outside the cluster, receive queries for `contour.` (the bare name, with no domain) from the cluster nodes. On an otherwise idle cluster this was about 12 queries a minute. Nothing breaks.
 
-**Probable cause.** Some component looks up the Contour Service by its short name, `contour`, from a namespace where no Service of that name exists. Another possibility is that it keeps retrying after the Service is deleted, for example during an uninstall. None of the pod's search domains (`<namespace>.svc.cluster.local` and so on) resolve it. The resolver then tries the name as it is, and CoreDNS forwards it to the upstream DNS. On Talos this goes through the node's host DNS, so the site DNS sees the node IPs.
+**Cause (confirmed with the CoreDNS query log).** The queries come from the `contour-envoy` pods, in namespace `contour`. Their init container bootstraps Envoy with `contour bootstrap --xds-address=contour`, and no `--dns-lookup-family`. So the Envoy cluster `contour` is `STRICT_DNS` on the short name `contour`, with the default lookup family, and Envoy re-resolves it every few seconds. Each refresh does two lookups:
 
-**Why it matters.** It is harmless, but it sends cluster-internal names to the organisation's DNS servers, and DNS administrators will ask about it.
+- **The A lookup** resolves through the first search domain, `contour.contour.svc.cluster.local`.
+- **The AAAA lookup**, on an IPv4-only cluster, finds no address there. The resolver then walks the whole search list, and finally asks for `contour.` itself. CoreDNS forwards that to the upstream DNS. On Talos this goes through the node's host DNS, so the site DNS sees the node IPs.
 
-**Possible fix.** Refer to in-cluster Services by their fully qualified name, with a trailing dot: `contour.<namespace>.svc.cluster.local.`. Or at least use `contour.<namespace>`, which a search domain resolves.
+The CoreDNS log shows this sequence for `AAAA`, at every refresh: `contour.contour.svc.cluster.local.` → `contour.svc.cluster.local.` → `contour.cluster.local.` (NXDOMAIN) → `contour.`.
+
+Seen with Contour `v1.33.7`, bundled by Educates `4.0.0-alpha.13`.
+
+**Why it matters.** It is harmless, but it sends a cluster-internal name to the organisation's DNS servers, constantly. DNS administrators notice it and ask about it.
+
+**Possible fixes**, in the arguments of the bundled Envoy's init container (`contour bootstrap`):
+
+- `--dns-lookup-family=v4` on IPv4-only clusters (the option exists: v4, v6, auto or all);
+- or a fully qualified xDS address: `--xds-address=contour.<namespace>.svc.cluster.local.`, with the trailing dot, so no search list is walked.
