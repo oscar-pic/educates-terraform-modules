@@ -23,6 +23,7 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 | 10 | The training portal is a single replica with a `ReadWriteOnce` volume | Portal down for about 2 minutes whenever its node is drained (upgrades, maintenance) | Documented: upgrade outside class hours |
 | 11 | Proposal: a documentation section for on-premises clusters | Most findings here are not specific to Proxmox or Talos | — |
 | 12 | Proposal: a cluster readiness check in the Educates CLI | Users find cluster problems only when a workshop fails | `scripts/e2e-test.sh` in this repository |
+| 13 | Lookups of the bare name `contour` leak to the site DNS | None functionally; noise in the DNS servers' logs | — |
 
 ## 1. Workshop NetworkPolicy blocks in-cluster traffic on Cilium
 
@@ -178,3 +179,13 @@ A section like "Installing on premises" in the Educates installation guides woul
 - with Educates installed, a real workshop session over HTTPS.
 
 Today users discover these problems when a workshop fails. Something like `educates admin cluster check` in the Educates CLI, built from these checks, would tell them before they install, on any platform. The script is offered as a starting point.
+
+## 13. Lookups of the bare name `contour` leak to the site DNS
+
+**What we saw.** The site's DNS servers, outside the cluster, received queries for `contour.`, the bare name with no domain, from the cluster nodes. Nothing broke. We noticed it from the DNS server side, after the cluster was gone, so we could not tell which pod made the lookups.
+
+**Probable cause.** Some component looks up the Contour Service by its short name, `contour`, from a namespace where no Service of that name exists. Another possibility is that it keeps retrying after the Service is deleted, for example during an uninstall. None of the pod's search domains (`<namespace>.svc.cluster.local` and so on) resolve it. The resolver then tries the name as it is, and CoreDNS forwards it to the upstream DNS. On Talos this goes through the node's host DNS, so the site DNS sees the node IPs.
+
+**Why it matters.** It is harmless, but it sends cluster-internal names to the organisation's DNS servers, and DNS administrators will ask about it.
+
+**Possible fix.** Refer to in-cluster Services by their fully qualified name, with a trailing dot: `contour.<namespace>.svc.cluster.local.`. Or at least use `contour.<namespace>`, which a search domain resolves.
