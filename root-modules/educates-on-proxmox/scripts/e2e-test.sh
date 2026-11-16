@@ -333,10 +333,13 @@ else
       else
         pass "workshop session pod Ready ($((SECONDS - START))s, includes the image pull on a new node)"
         T() { kubectl -n "$PORTAL-w01" exec "$SPOD" -c workshop -- sh -c "$1" 2>&1 | tail -n 1; }
-        [ "$(T "getent hosts training-portal.$PORTAL-ui >/dev/null && echo ok")" = "ok" ] \
-          && pass "session: resolves the portal (needed for login)" || fail "session: cannot resolve the portal"
-        [ "$(T "kubectl get pods -o name >/dev/null && echo ok")" = "ok" ] \
-          && pass "session: kubectl reaches the Kubernetes API" || fail "session: kubectl cannot reach the API"
+        # Retry for up to a minute: right after Ready, the session's network policies and
+        # credentials may still be settling (seen on slow, nested hypervisors).
+        TR() { local out=""; for _ in $(seq 1 12); do out=$(T "$1"); [ "$out" = "ok" ] && break; sleep 5; done; echo "$out"; }
+        OUT=$(TR "getent hosts training-portal.$PORTAL-ui >/dev/null && echo ok")
+        [ "$OUT" = "ok" ] && pass "session: resolves the portal (needed for login)" || fail "session: cannot resolve the portal: $OUT"
+        OUT=$(TR "kubectl get pods -o name 2>&1 >/dev/null | tail -n 1; kubectl get pods -o name >/dev/null 2>&1 && echo ok")
+        [ "$OUT" = "ok" ] && pass "session: kubectl reaches the Kubernetes API" || fail "session: kubectl cannot reach the API: $OUT"
         PURL=$(kubectl get trainingportal "$PORTAL" -o jsonpath='{.status.educates.url}')
         SURL=$(kubectl get workshopsessions -o json | jq -r --arg p "$PORTAL-w01" '[.items[] | select(.spec.environment.name == $p) | .status.educates.url // empty] | first // empty')
         for U in "$PURL" "$SURL"; do
