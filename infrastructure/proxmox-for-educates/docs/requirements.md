@@ -41,6 +41,7 @@ The full [checklist](#checklist) is at the end.
 - a Proxmox cluster with quorum;
 - shared storage for the VMs;
 - free capacity on the remaining hosts;
+- Proxmox VE 9 or later: the module adds an HA rule per VM, so each one prefers its `proxmox_node`, and turns failback on;
 - `Sys.Console` and `Sys.Audit` on `/` for the token.
 
 Proxmox does not allow narrowing those privileges, and they give console access to every VM and host. A provider will normally not grant them.

@@ -73,6 +73,7 @@ The tested Educates configuration on this cluster is `EducatesConfig` in `Manage
 | Ingress | Not installed here: Educates 4 bundles Contour (and later agentgateway) | One owner per component |
 | Resource pool | An existing pool by default; creating its last level is optional | Pools often belong to the Proxmox administrator; ACLs on the pool survive VM destroys |
 | Proxmox HA | Optional, off in the examples | It needs `Sys.Console` on `/`; spread Kubernetes nodes are already redundant |
+| VM placement | Each VM stays on its `proxmox_node`: with HA, a non-strict node-affinity rule and failback; always, `migrate = true` | A VM moved by HA (or by hand) must not make the next apply destroy and recreate it. A recreated control plane breaks its etcd member |
 | Tooling | Plain `tofu`/`terraform` plus small shell scripts; no Makefile or PowerShell wrapper | Fewer moving parts |
 
 ## Known workarounds

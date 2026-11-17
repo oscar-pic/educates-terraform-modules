@@ -484,6 +484,8 @@ if $PVE_OK; then
 
   if [ "$(cfg '.proxmox.ha_enabled // false')" = "true" ]; then
     check_privs "$TOKEN" "Proxmox HA" "/" Sys.Audit Sys.Console
+    # HA node-affinity rules and failback keep every VM on its proxmox_node: Proxmox VE 9.
+    if version_ge "$v" "9.0"; then pass "Proxmox HA: rules and failback available (Proxmox VE $v)"; else fail "Proxmox HA needs Proxmox VE 9 or later (rules, failback); this is $v"; fi
   fi
 
   if [ "$(cfg '.storage.proxmox_csi.enabled // false')" = "true" ]; then

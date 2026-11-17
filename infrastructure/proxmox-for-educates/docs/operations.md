@@ -145,6 +145,11 @@ Tested by powering off one of three hosts from its BMC, with a control-plane nod
 | ~6 min | Both nodes `Ready`. Kubernetes had evicted their pods after 5 minutes: the session restarted on another worker, with its volume |
 | — | **The training portal did not come back by itself.** See below |
 
+**When the host comes back.** Each VM has an HA rule that prefers its `proxmox_node`, and failback is on: Proxmox migrates the VMs back to their host by itself, live. Until then:
+
+- Do not apply. A VM on another host than its `proxmox_node` is migrated back by the next apply (`migrate = true`), and if its host is still down, the apply fails. It is never destroyed and created again.
+- Proxmox CSI volumes of a moved VM may fail to attach: the node's `topology.kubernetes.io/zone` label still names its own host.
+
 Without Proxmox HA, the cluster behaves the same until the VMs come back with their host. Kubernetes still moves the pods after 5 minutes.
 
 **The training portal after a node failure.** Educates 4 bundles Kyverno with one replica, and its webhooks block pod creation while Kyverno is down. If Kyverno ran on the failed node, the portal's replacement pod is rejected. Kubernetes then waits longer and longer between retries. When Kyverno is back, restart the portal:

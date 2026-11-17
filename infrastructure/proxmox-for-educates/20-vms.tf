@@ -21,8 +21,11 @@ resource "proxmox_virtual_environment_pool" "this" {
 resource "proxmox_virtual_environment_vm" "node" {
   for_each = var.nodes
 
-  name        = local.hostnames[each.key]
-  node_name   = each.value.proxmox_node
+  name      = local.hostnames[each.key]
+  node_name = each.value.proxmox_node
+  # A VM found on another host (moved by Proxmox HA, or by hand) is migrated back to
+  # proxmox_node, never destroyed and created again. If that host is down, the apply fails.
+  migrate     = true
   vm_id       = each.value.vm_id
   pool_id     = var.proxmox.create_pool ? proxmox_virtual_environment_pool.this[0].pool_id : var.proxmox.pool
   description = "Talos ${each.value.role} of Kubernetes cluster '${var.cluster_name}'. Managed by OpenTofu/Terraform."
@@ -139,4 +142,20 @@ resource "proxmox_haresource" "node" {
   resource_id = "vm:${proxmox_virtual_environment_vm.node[each.key].vm_id}"
   state       = "started"
   comment     = "Talos node ${local.hostnames[each.key]}"
+  # Back to its preferred host (the node-affinity rule below) as soon as that host returns,
+  # so the VMs end up where the configuration says.
+  failback = true
+}
+
+# Each VM prefers its proxmox_node. Not strict: when that host fails, HA starts the VM on
+# another host, and failback brings it home later.
+resource "proxmox_harule" "node" {
+  for_each = var.proxmox.ha_enabled ? var.nodes : {}
+
+  rule      = local.hostnames[each.key]
+  type      = "node-affinity"
+  resources = [proxmox_haresource.node[each.key].resource_id]
+  nodes     = { (each.value.proxmox_node) = 1 }
+  strict    = false
+  comment   = "Talos node ${local.hostnames[each.key]}: prefer ${each.value.proxmox_node}"
 }
