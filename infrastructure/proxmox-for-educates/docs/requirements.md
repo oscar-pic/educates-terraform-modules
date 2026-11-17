@@ -46,6 +46,8 @@ The full [checklist](#checklist) is at the end.
 
 Proxmox does not allow narrowing those privileges, and they give console access to every VM and host. A provider will normally not grant them.
 
+**Keep them while HA resources exist.** Destroying the cluster, or turning HA off, deletes the HA resources and rules, and needs the same privileges. To stop using HA on a running cluster: set `ha_enabled = false`, apply, and only then revoke them.
+
 Usually you do not need it. A cluster with three control-plane nodes and several workers, spread over different Proxmox hosts, is already redundant: Kubernetes keeps running when a host fails. The VMs of the failed host start again when it comes back. Proxmox HA fits single-VM services better, and it is the Proxmox administrator's decision.
 
 ## Sizing

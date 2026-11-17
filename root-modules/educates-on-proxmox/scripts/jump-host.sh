@@ -88,7 +88,10 @@ case "$cmd" in
   setup)
     remote "
       set -e
-      mkdir -p \"$D/state\" && chmod 700 \"$D/state\"
+      mkdir -p \"$D/state\" \"$D/home\" && chmod 700 \"$D/state\" \"$D/home\"
+      # git runs before guest-env.sh exists here: give it the work directory's home too, so
+      # nothing (SSH known_hosts, git config) is read from or written to the user's own home.
+      export HOME=\"$D/home\"
       if [ ! -d \"$D/repo/.git\" ]; then git clone --quiet \"$REPO_URL\" \"$D/repo\"; fi
       git -C \"$D/repo\" remote set-url --push origin no-push
       # Check out REPO_REF before writing into the module: it may not exist on the default branch.
@@ -111,6 +114,7 @@ EOF
     ref="${1:-$REPO_REF}"
     remote "
       set -e
+      export HOME=\"$D/home\"   # as in setup: git never uses the user's own home
       cd \"$D/repo\"
       git fetch --quiet --tags origin
       # origin/<branch> first: a local branch of the same name may be stale.

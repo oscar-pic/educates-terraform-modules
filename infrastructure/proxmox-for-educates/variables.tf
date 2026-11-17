@@ -3,8 +3,9 @@ variable "cluster_name" {
   type        = string
 
   validation {
-    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$", var.cluster_name))
-    error_message = "cluster_name must be 1-32 lowercase letters, digits or hyphens, starting and ending with a letter or digit."
+    # It starts the VM names and the Proxmox HA rule IDs, which must start with a letter.
+    condition     = can(regex("^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$", var.cluster_name))
+    error_message = "cluster_name must be 1-32 lowercase letters, digits or hyphens, starting with a letter and ending with a letter or digit."
   }
 }
 
@@ -143,6 +144,13 @@ variable "nodes" {
     disk_size    = optional(number, 40)
     labels       = optional(map(string), {})
   }))
+
+  validation {
+    # <cluster_name>-<key> is the VM name, the Talos and Kubernetes node name, and the Proxmox
+    # HA rule ID: a DNS label of at most 63 characters.
+    condition     = alltrue([for k in keys(var.nodes) : can(regex("^[a-z0-9]([a-z0-9-]{0,28}[a-z0-9])?$", k))])
+    error_message = "Node keys must be 1-30 lowercase letters, digits or hyphens, starting and ending with a letter or digit (e.g. cp-01, worker-01)."
+  }
 
   validation {
     condition     = alltrue([for n in values(var.nodes) : contains(["controlplane", "worker"], n.role)])

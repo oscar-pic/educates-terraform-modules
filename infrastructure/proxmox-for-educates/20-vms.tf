@@ -38,8 +38,9 @@ resource "proxmox_virtual_environment_vm" "node" {
   started         = true
   stop_on_destroy = true
   # Never let the provider reboot a node to apply a change: on a cluster that would happen to
-  # several nodes at once (etcd quorum). Changes that need a reboot are left pending, and the
-  # nodes are rebooted one at a time (docs/operations.md).
+  # several nodes at once (etcd quorum). A change that needs the VM offline makes the apply
+  # fail instead; one applied live but effective only after a reboot gives a warning. Reboot
+  # the nodes one at a time (docs/operations.md).
   reboot_after_update = false
 
   agent {
@@ -70,7 +71,7 @@ resource "proxmox_virtual_environment_vm" "node" {
   disk {
     interface    = "scsi0"
     datastore_id = var.proxmox.vm_datastore
-    import_from  = proxmox_download_file.talos[var.proxmox.image_datastore_shared ? local.image_nodes[0] : each.value.proxmox_node].id
+    import_from  = proxmox_download_file.talos[var.proxmox.image_datastore_shared ? "shared" : each.value.proxmox_node].id
     size         = each.value.disk_size
     iothread     = true
     discard      = "on"

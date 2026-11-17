@@ -42,7 +42,8 @@ Edit the variables and run `tofu apply`. `talos_machine` re-applies the new mach
 
 - **Reboots.** Some changes need one. For example, etcd extra arguments only take effect after a reboot.
 - **API server restarts.** Changing the API server authentication configuration restarts the API server on each control-plane node for about 10 s.
-- **Several control-plane nodes.** To change a setting that restarts components, apply with `-parallelism=1`, or reboot or patch the nodes one at a time.
+- **Several control-plane nodes.** `talos_machine` sends a changed configuration to every node in parallel, and Talos applies it in its automatic mode: live when it can, with a reboot when it must. The provider has no setting to stage it instead. A change that reboots all control-plane nodes at once loses etcd quorum until they are back. So, before applying a change to every node, check whether it needs a reboot (most do not: patches, kernel modules, labels, certificates). For one that does, apply with `-parallelism=1` and watch each node come back, or stage it per node with `talosctl apply-config --mode staged` and reboot one at a time.
+- **VM settings.** The provider never reboots a VM (`reboot_after_update = false`). A VM change that needs the VM offline makes the apply fail: stop or reboot that VM by hand, one at a time, and apply again. A change that is applied live but needs a reboot gives a warning.
 - **Talos merges lists by appending.** To replace a list entry, delete the document in one patch and add it back in another. The module does this for the default `KubeNodeConfig`.
 - **Do not change `talos.config_contract`.** It regenerates every node's configuration and may rotate secrets.
 
@@ -168,6 +169,7 @@ The same applies to any pod Educates creates while Kyverno is down, for example 
 - **Checking control-plane failover.** Reboot the node that holds the VIP (`talosctl -n <ip> get addresses` shows it) while polling `https://<vip>:6443/version`. Any HTTP answer, including 401, means the API is up. The VIP moves to another control-plane node, and the API keeps answering.
 - **Removing a worker.** Drain it first, then remove it from `nodes`.
 - **Removing a control-plane node.** Remove it from etcd first (`talosctl -n <node-ip> reset --graceful`), and keep an odd number of control-plane nodes.
+- **The bootstrap node.** The first control-plane key in alphabetical order bootstrapped etcd. The module never bootstraps again, even if that key is removed or a new key sorts first. But the Kubernetes upgrades (`upgrade-k8s`) still go through that node, so keep it, or keep its key's IP pointing to a control-plane node.
 
 ## Adding a storage network to a running cluster
 

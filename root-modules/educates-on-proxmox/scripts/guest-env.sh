@@ -18,6 +18,8 @@
 #   TF_VAR_ceph_csi_rbd_user_key="$CEPH_RBD_KEY". KUBECONFIG and TALOSCONFIG from <work dir>/state.
 
 _guest_dir="${1:?usage: . guest-env.sh <work dir>}"
+# Absolute, so HOME and PATH keep working after a cd.
+_guest_dir="$(cd "$_guest_dir" && pwd)" || return 1
 
 if [ "$HOME" != "$_guest_dir/home" ]; then
   mkdir -p "$_guest_dir/home"

@@ -24,9 +24,12 @@ data "talos_image_factory_urls" "this" {
 }
 
 resource "proxmox_download_file" "talos" {
-  for_each = toset(local.image_nodes)
+  # One download per Proxmox host, or a single one under the fixed key "shared" on a shared
+  # datastore: changing the download host then replaces it in place (destroy, then create),
+  # never two instances of the same file in one apply.
+  for_each = local.image_downloads
 
-  node_name    = each.key
+  node_name    = each.value
   datastore_id = var.proxmox.image_datastore
   content_type = "import"
   url          = data.talos_image_factory_urls.this.urls.disk_image

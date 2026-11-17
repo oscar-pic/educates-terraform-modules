@@ -219,12 +219,22 @@ locals {
     { for t in data.helm_template.ceph_fs : "ceph-fs" => t.manifest },
     { for t in data.helm_template.nfs : "nfs" => t.manifest },
   )
-  # One entry per object, keyed "<driver>/<kind>/<namespace>/<name>" (known at plan time).
-  csi_objects = merge([for driver, manifest in local.csi_rendered : {
-    for doc in split("\n---", "\n${manifest}") :
-    "${driver}/${yamldecode(doc).kind}/${try(yamldecode(doc).metadata.namespace, "-")}/${yamldecode(doc).metadata.name}" => doc
+  # Every rendered document, decoded once.
+  csi_docs = flatten([for driver, manifest in local.csi_rendered : [
+    for doc in split("\n---", "\n${manifest}") : { driver = driver, obj = yamldecode(doc) }
     if try(yamldecode(doc).kind, null) != null
-  }]...)
+  ]])
+  # StorageClass and CSIDriver are replaced on any change (immutable fields): drop their labels,
+  # which name the chart version, so a chart upgrade alone does not replace them.
+  immutable_kinds = ["StorageClass", "CSIDriver"]
+  # One entry per object, keyed "<driver>/<kind>/<namespace>/<name>" (known at plan time).
+  csi_objects = { for d in local.csi_docs :
+    "${d.driver}/${d.obj.kind}/${try(d.obj.metadata.namespace, "-")}/${d.obj.metadata.name}" => (
+      contains(local.immutable_kinds, d.obj.kind)
+      ? yamlencode(merge(d.obj, { metadata = { for k, v in d.obj.metadata : k => v if k != "labels" } }))
+      : yamlencode(d.obj)
+    )
+  }
 }
 
 resource "kubectl_manifest" "csi" {
@@ -232,7 +242,7 @@ resource "kubectl_manifest" "csi" {
 
   yaml_body = each.value
   # StorageClass parameters and CSIDriver specs are immutable: replace them on change.
-  force_new = contains(["StorageClass", "CSIDriver"], split("/", each.key)[1])
+  force_new = contains(local.immutable_kinds, split("/", each.key)[1])
 
   depends_on = [kubectl_manifest.namespace, kubectl_manifest.proxmox_csi_config, kubectl_manifest.ceph_secret]
 }

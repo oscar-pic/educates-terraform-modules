@@ -20,10 +20,10 @@ locals {
 
   # Proxmox tags per node. No tags at all means the parameter is not sent (null): Proxmox checks
   # even an empty tags value against /vms/<id>, which pool-only privileges do not cover.
-  vm_tags = { for k, n in var.nodes : k => (
-    length(var.proxmox.tags) + (var.proxmox.default_tags ? 1 : 0) == 0 ? null :
-    sort(distinct(concat(var.proxmox.default_tags ? ["talos", var.cluster_name, n.role] : [], var.proxmox.tags)))
-  ) }
+  vm_tag_lists = { for k, n in var.nodes : k => sort(distinct(concat(
+    var.proxmox.default_tags ? ["talos", var.cluster_name, n.role] : [], var.proxmox.tags,
+  ))) }
+  vm_tags = { for k, t in local.vm_tag_lists : k => length(t) == 0 ? null : t }
 
   schedulable_control_planes = (
     var.allow_scheduling_on_control_planes != null
@@ -37,7 +37,10 @@ locals {
 
   # Proxmox nodes that need their own copy of the Talos image.
   proxmox_nodes = sort(distinct([for n in values(var.nodes) : n.proxmox_node]))
-  image_nodes   = var.proxmox.image_datastore_shared ? [coalesce(var.proxmox.image_download_node, local.proxmox_nodes[0])] : local.proxmox_nodes
+  image_downloads = (var.proxmox.image_datastore_shared
+    ? { shared = coalesce(var.proxmox.image_download_node, local.proxmox_nodes[0]) }
+    : { for n in local.proxmox_nodes : n => n }
+  )
 
   gateway_api_crds_url = coalesce(
     var.gateway_api.crds_url,
@@ -89,4 +92,10 @@ locals {
   ceph_rbd_user_key = var.ceph_csi_rbd_user_key != "" ? var.ceph_csi_rbd_user_key : var.ceph_csi_user_key
   ceph_fs_user_id   = coalesce(var.ceph_csi.cephfs.user_id, var.ceph_csi.user_id)
   ceph_fs_user_key  = var.ceph_csi_cephfs_user_key != "" ? var.ceph_csi_cephfs_user_key : var.ceph_csi_user_key
+}
+
+locals {
+  # Talos API endpoint for cluster-wide operations: the VIP when there is one (it follows the
+  # control planes), otherwise the bootstrap node.
+  talos_endpoint = coalesce(var.network.api_vip, local.bootstrap_ip)
 }

@@ -143,17 +143,23 @@ resource "talos_machine" "node" {
 # runs upgrade-k8s, node by node with health gating).
 resource "talos_cluster" "this" {
   node                 = local.bootstrap_ip
-  endpoint             = local.bootstrap_ip
+  endpoint             = local.talos_endpoint
   control_plane_nodes  = local.cp_ips
   client_configuration = talos_machine_secrets.this.client_configuration
   kubernetes_version   = "v${local.kubernetes_version}"
 
   depends_on = [talos_machine.node]
+
+  lifecycle {
+    # The bootstrap node is the first control-plane key in alphabetical order. Adding a key
+    # that sorts first, or removing that node, must never bootstrap etcd again.
+    ignore_changes = [node]
+  }
 }
 
 resource "talos_cluster_kubeconfig" "this" {
   node                 = local.bootstrap_ip
-  endpoint             = local.bootstrap_ip
+  endpoint             = local.talos_endpoint
   client_configuration = talos_machine_secrets.this.client_configuration
 
   depends_on = [talos_cluster.this]
