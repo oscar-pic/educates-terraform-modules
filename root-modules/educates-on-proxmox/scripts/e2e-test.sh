@@ -99,7 +99,7 @@ section "Prerequisites"
 for t in kubectl curl jq; do
   if have "$t"; then pass "$t"; else fail "$t not found"; fi
 done
-have talosctl && pass "talosctl" || warn "talosctl not found: the Talos health check is skipped"
+have talosctl && pass "talosctl" || info "talosctl not found: the Talos health check is skipped"
 if $WORKSHOP && ! have educates; then fail "--workshop needs the educates CLI"; fi
 if [ -n "$CA_FILE" ] && [ ! -f "$CA_FILE" ]; then fail "--ca-file $CA_FILE not found"; fi
 if ! kubectl version --request-timeout=10s >/dev/null 2>&1; then
@@ -117,7 +117,7 @@ TOTAL=$(echo "$NODES" | grep -c .)
 READY=$(echo "$NODES" | awk '$2 == "Ready"' | grep -c .)
 [ "$TOTAL" -gt 0 ] && [ "$READY" -eq "$TOTAL" ] && pass "nodes: $READY/$TOTAL Ready" || fail "nodes: $READY/$TOTAL Ready"
 
-if have talosctl; then
+if have talosctl && [ -n "${TALOSCONFIG:-}" ] && echo "$(kubectl get nodes -o jsonpath='{.items[*].status.nodeInfo.osImage}')" | grep -q Talos; then
   if talosctl health --wait-timeout 2m >/dev/null 2>&1; then pass "talosctl health"; else fail "talosctl health (run it by hand to see why)"; fi
 fi
 

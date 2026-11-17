@@ -71,7 +71,7 @@ Secrets come from the environment, never from the tfvars file:
 | `scripts/jump-host.sh` | Runs everything on a jump host over SSH (`setup`, `sync`, `preflight`, `plan`, `apply`, `attach`, `e2e`, `shell`) |
 | `scripts/guest-env.sh` | Sourced on a jump host: keeps every tool inside the work directory (its own `HOME`), and loads the secrets, `KUBECONFIG` and `TALOSCONFIG` |
 
-Each script describes its options with `--help`.
+Each script describes its options with `--help`, except `guest-env.sh`, which is sourced: see its header.
 
 ## State
 

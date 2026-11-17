@@ -2,6 +2,8 @@
 
 Operating a cluster built with these modules, and Educates on it.
 
+Where this page says `tofu plan` or `tofu apply`, use the same form as for the deployment: `tofu plan -var-file=my-cluster.tfvars -out=my-cluster.tfplan`, then `tofu apply my-cluster.tfplan`. On a jump host, `scripts/jump-host.sh plan` and `scripts/jump-host.sh apply`, which also pass `client_configs_dir`.
+
 - [Using kubectl and talosctl](#using-kubectl-and-talosctl)
 - [Changing the configuration](#changing-the-configuration)
 - [Upgrading Kubernetes](#upgrading-kubernetes) and [Talos](#upgrading-talos)
@@ -131,7 +133,7 @@ ha-manager set vm:<vm-id> --state stopped     # on a Proxmox host, or Datacenter
 ha-manager set vm:<vm-id> --state started     # to start it again
 ```
 
-To move a VM to another host, migrate it through HA (`ha-manager migrate vm:<vm-id> <host>`). The token of the module does not need these privileges: they are for the Proxmox administrator.
+A manual migration (`ha-manager migrate vm:<vm-id> <host>`) is temporary: failback, or the next apply, brings the VM back to its `proxmox_node`. To move a VM for good, change its `proxmox_node` and apply. For host maintenance, stop the VM as above, or use the host's HA maintenance mode. The token of the module does not need these privileges: they are for the Proxmox administrator.
 
 
 ### When a Proxmox host fails

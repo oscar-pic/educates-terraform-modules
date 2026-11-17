@@ -85,11 +85,16 @@ Each one can be removed when its cause is fixed upstream.
 - **Educates 4 workshop NetworkPolicy on Cilium.** Its `ipBlock` egress rule blocks in-cluster traffic on Cilium, and it cannot be switched off. `45-educates-compat.tf` adds a Cilium policy that restores in-cluster egress for workshop namespaces only.
 - **Cilium CRDs after the health check.** The Talos health check can pass before Cilium registers its CRDs. The `kubectl` provider retries (`apply_retry_count`).
 
+## Tested on real hardware
+
+- A three-host Proxmox VE 9.2 cluster with Ceph: one and three control-plane nodes, workers added, a storage network added to a running cluster, Ceph RBD, CephFS and Proxmox CSI, Kubernetes and Talos upgrades, destroy and recreate.
+- Proxmox HA: creating and destroying the HA resources, a guest shutdown (Proxmox starts the VM again), a host power-off, and failback when the host returns (see [operations.md](operations.md#when-a-proxmox-host-fails)).
+- A standalone (nested) Proxmox VE 9.2 host: the `local` image datastore, Proxmox CSI on LVM-thin, NFS CSI, a cluster without an API VIP.
+- Educates 4 on each of them, with real workshop sessions.
+
 ## Open points
 
 - Gateway API: agree with the Educates team on who installs the Gateway API CRDs once Educates bundles agentgateway, and on how to pin the gateway address (`Gateway.spec.addresses`).
-- Proxmox HA: tested creating and destroying the HA resources, a guest shutdown (Proxmox starts the VM again), and a host power-off (see operations.md, When a Proxmox host fails).
-- Tested on a standalone (nested) Proxmox VE 9.2 host: the `local` image datastore, Proxmox CSI on LVM-thin, NFS CSI, a cluster without an API VIP (one control-plane node, one worker), and Educates with a real workshop session.
 - The Talos health check reports a healthy cluster before every node is `Ready` with its CNI. Consider an extra readiness gate before the cluster services.
 
 ## Possible later additions

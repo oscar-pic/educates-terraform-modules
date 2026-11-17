@@ -99,7 +99,7 @@ The comments in the examples explain each setting. The full list is in the [root
 
 Keep everything with secrets out of the clone: `~/educates/` holds `proxmox.env`, and later your certificate files and `educates.yaml`.
 
-The single-host example is tested with one Talos VM on a Proxmox cluster, not yet on a standalone Proxmox host with `local` / `local-lvm` storage. Report any problem you find there.
+The single-host example is tested on a Proxmox cluster and on a standalone Proxmox host (`local` and `local-lvm`).
 
 ## 4. Deploy the cluster
 
@@ -164,9 +164,8 @@ Educates 4 is installed by an operator, with the Educates CLI. Its own documenta
 
 Run these commands where `kubectl` reaches the cluster, in `~/educates` (outside the clone). With a jump host:
 
-- open `scripts/jump-host.sh shell`;
-- put the Educates CLI in `<work dir>/bin`;
-- copy your certificate files and `educates.yaml` to the work directory.
+- put the Educates CLI in `<work dir>/bin`, and copy your certificate files and `educates.yaml` to the work directory;
+- open `scripts/jump-host.sh shell`, and `cd` to the work directory by its absolute path. In that shell, `~` is `<work dir>/home` (guest-env.sh), not the work directory: use absolute paths instead of `~/educates/...` below.
 
 ### Certificates
 
@@ -262,7 +261,8 @@ educates deploy-workshop -f https://github.com/educates/lab-k8s-fundamentals/rel
   --initial 1 --overdue 10m
 educates view-credentials        # the portal URL (educates-cli-ui.<domain>) and its password
 # End-to-end check with a real session, from the root module directory. --ca-file only with your own lab CA.
-scripts/e2e-test.sh --workshop --ca-file ~/educates/lab-ca/ca.crt     # jump host: scripts/jump-host.sh e2e --workshop
+scripts/e2e-test.sh --workshop --ca-file ~/educates/lab-ca/ca.crt
+# jump host (absolute path; ~ is not expanded): scripts/jump-host.sh e2e --workshop --ca-file <work dir>/lab-ca/ca.crt
 ```
 
 Open the portal URL and start the workshop. The first session on each node takes a few minutes, while the image downloads.

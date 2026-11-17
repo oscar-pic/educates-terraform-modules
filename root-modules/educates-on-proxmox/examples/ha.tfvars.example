@@ -25,7 +25,7 @@ proxmox = {
   default_tags = false
   tags         = []
   # Proxmox HA is optional and usually not needed: three control-plane nodes on three hosts
-  # are already redundant, and it needs Sys.Console on / (see docs/requirements.md).
+  # are already redundant, and it needs Proxmox VE 9 and Sys.Console on / (see docs/requirements.md).
   # ha_enabled = true
 }
 

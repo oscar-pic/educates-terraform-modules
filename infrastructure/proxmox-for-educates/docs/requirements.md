@@ -81,7 +81,7 @@ Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` 
 | `/pool/<pool>` (with `proxmox.pool`) | Role `PVEVMAdmin` | Create and manage the VMs. **Grant VM privileges on the pool, not on `/vms/<id>`:** Proxmox deletes the ACLs of `/vms/<id>` when it destroys the VM, so after a destroy per-ID privileges are gone and the cluster cannot be recreated until someone grants them again. ACLs on the pool survive, and Proxmox accepts creating a VM in the pool with `VM.Allocate` on the pool. Without a pool, `/vms/<id>` for each VM ID works, but only until the first destroy |
 | `/pool/<pool>`, only with `proxmox.pool` | Role `PVEPoolAdmin` (`Pool.Allocate`, `Pool.Audit`) | Put the VMs in the pool and read it. Nothing on the parent pools. With `proxmox.create_pool`, the pool does not exist yet: grant it on the parent instead (`/pool/lab` for `lab/educates`), which propagates |
 | `/storage/<vm-datastore>` | `Datastore.AllocateSpace`, `Datastore.Audit` | VM disks, EFI disks, cloud-init drives |
-| `/storage/<image-datastore>` | `Datastore.AllocateTemplate`, `Datastore.AllocateSpace`, `Datastore.Audit`, `Datastore.Allocate` | Download and import the Talos image, and **delete** it when a Talos upgrade replaces it or the cluster is destroyed. On a shared datastore, `Datastore.Allocate` also allows deleting other files there. Without it, those deletions fail with HTTP 403: drop the image from the state (`tofu state rm 'module.cluster.proxmox_download_file.talos["<node>"]'`) and let the Proxmox administrator delete the file |
+| `/storage/<image-datastore>` | `Datastore.AllocateTemplate`, `Datastore.AllocateSpace`, `Datastore.Audit`, `Datastore.Allocate` | Download and import the Talos image, and **delete** it when a Talos upgrade replaces it or the cluster is destroyed. On a shared datastore, `Datastore.Allocate` also allows deleting other files there. Without it, those deletions fail with HTTP 403: drop the image from the state (`tofu state rm 'module.cluster.proxmox_download_file.talos["<node>"]'`, or `talos["shared"]` with `image_datastore_shared = true`) and let the Proxmox administrator delete the file |
 | `/nodes/<node>` for each node that downloads the image | `Sys.AccessNetwork`, `Sys.Audit` | Download from a URL. This lets the host fetch any URL it can reach. With a shared image datastore, one node downloads: `proxmox.image_download_node`, or else the first, in alphabetical order, of the Proxmox nodes that host VMs (which changes with the topology). Otherwise every node that hosts a VM downloads |
 | `/sdn/zones/localnetwork/<bridge>` (plain Linux bridge), or `/sdn/zones/<zone>/<vnet>` (SDN VNet) | `SDN.Use` (role `PVESDNUser`) | Attach the NICs. Needed for every bridge used, including the storage network. Since Proxmox VE 8, plain bridges need it too |
 | `/` | `Sys.Audit`, `Sys.Console` | Only with `proxmox.ha_enabled` (optional): Proxmox requires them on `/` to manage HA resources, and does not allow narrowing them to a pool or to VM IDs. `Sys.Console` on `/` gives console access to the whole infrastructure, so a Proxmox provider will normally not grant it. See [Proxmox HA](#proxmox-ha-optional) |
@@ -195,7 +195,7 @@ Follow [getting-started.md](getting-started.md#option-a-from-your-workstation) i
 
 ### Option B: a jump host
 
-Use a small Linux machine in the node subnet, or one routed to it, with the [tools](#tools), `git` and `tmux` installed. You need an SSH login to it; the `ssh` command alone must work, for example through an alias in `~/.ssh/config`.
+Use a small Linux machine in the node subnet, or one routed to it, with the [tools](#tools), `git` and `tmux` installed. `git` and `tmux` must be installed system-wide: `jump-host.sh` uses them before `<work dir>/bin` is in the `PATH`. The other tools can live in `<work dir>/bin`. You need an SSH login to it; the `ssh` command alone must work, for example through an alias in `~/.ssh/config`.
 
 Keep everything site-specific outside the clone, so nothing can be committed by mistake:
 
@@ -274,14 +274,14 @@ All outbound traffic to the internet is HTTPS (TCP 443), except DNS and NTP. Wit
 |---|---|---|---|
 | Proxmox API (any host of the cluster) | TCP 8006 | Deploy, changes | Create VMs, download the image, HA resources |
 | Every Talos node | TCP 50000 | Deploy, operations | Talos API: apply configuration, bootstrap, health, upgrades |
-| Kubernetes API (VIP or single node) | TCP 6443 | Deploy, operations, Educates install | Cluster services (phase 2), `kubectl`, Educates CLI |
-| `registry.opentofu.org` or `registry.terraform.io`, `github.com`, `objects.githubusercontent.com` | 443 | `tofu init` | Provider downloads |
+| Kubernetes API (VIP or single node) | TCP 6443 | Deploy, operations, Educates install | Cluster services (LoadBalancer IPs, storage drivers), `kubectl`, Educates CLI |
+| `registry.opentofu.org` or `registry.terraform.io`, `github.com`, `release-assets.githubusercontent.com`, `objects.githubusercontent.com` | 443 | `tofu init` | Provider downloads (GitHub redirects release downloads to the `githubusercontent.com` hosts) |
 | `factory.talos.dev` | 443 | Deploy, Talos upgrades | Builds the image schematic and its URLs |
 | `helm.cilium.io` | 443 | Deploy | The Cilium chart is rendered on this machine |
 | `ghcr.io` | 443 | Deploy (Proxmox CSI), Educates install | Proxmox CSI and Educates charts |
 | `ceph.github.io` | 443 | Deploy, only with Ceph CSI | Ceph CSI charts |
 | `raw.githubusercontent.com` | 443 | Deploy, only with NFS CSI | NFS CSI chart |
-| `github.com` | 443 | Once | Educates CLI, `talosctl` and other downloads |
+| `github.com`, `release-assets.githubusercontent.com` | 443 | Once | Educates CLI, `talosctl` and other downloads |
 
 ### From the Proxmox hosts
 
@@ -297,7 +297,7 @@ All outbound traffic to the internet is HTTPS (TCP 443), except DNS and NTP. Wit
 | NTP servers | UDP 123 | Time sync. Talos refuses to work with a large clock skew |
 | `ghcr.io`, `registry.k8s.io`, `quay.io`, `docker.io`, `factory.talos.dev` | 443 | Container images: system components, CSI drivers, Educates, Talos installer for upgrades |
 | Whatever registries the workshops pull from | 443 | Workshop images |
-| `github.com` | 443 | Gateway API CRDs at bootstrap, only if Gateway API is enabled |
+| `github.com`, `release-assets.githubusercontent.com` | 443 | Gateway API CRDs at bootstrap, only if Gateway API is enabled |
 | `discovery.talos.dev` | 443 | Talos discovery service (optional; the cluster works without it) |
 | Proxmox API | TCP 8006 | Proxmox CSI creates and attaches volumes through it. With a firewall between the node network and the Proxmox management network, open it **and** make sure the Proxmox hosts route the replies back. If the nodes reach Proxmox through another address than OpenTofu does, set `storage.proxmox_csi.url` |
 | Ceph monitors and OSDs | TCP 3300, 6789, 6800–7300 | Only with Ceph CSI |
@@ -347,7 +347,7 @@ The jump host works for this too.
 - [ ] Resource pool for the cluster's VMs: its name (it exists; or `create_pool`), and the VM ID range agreed with the Proxmox administrator
 - [ ] Terraform API token (ID and secret) with the [ACLs](#credentials), including `PVEPoolAdmin` and `PVEVMAdmin` on the pool, and `Datastore.Allocate` on the image datastore
 - [ ] Proxmox CSI token (ID and secret), if Proxmox CSI is used
-- [ ] VM datastore (shared, if Proxmox HA is used)
+- [ ] VM datastore (shared, if Proxmox HA is used). Proxmox HA also needs Proxmox VE 9 or later
 - [ ] Image datastore with `Import` content enabled
 - [ ] Outbound access from the Proxmox hosts to `factory.talos.dev`
 - [ ] Bridge, VLAN, subnet, gateway, DNS, NTP

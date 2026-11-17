@@ -85,7 +85,7 @@ module "cluster" {
 | etcd bootstrap and Kubernetes version | `talos_cluster`: changing `talos.kubernetes_version` runs `upgrade-k8s` |
 | Cilium | Inline manifest: kube-proxy replacement, KubePrism, L2 announcements, optional Gateway API |
 | Node labels | `topology.kubernetes.io/region` (Proxmox cluster) and `topology.kubernetes.io/zone` (Proxmox node), plus `nodes[*].labels` |
-| Proxmox HA resources | Only with `proxmox.ha_enabled` |
+| Proxmox HA resources | Only with `proxmox.ha_enabled` (Proxmox VE 9): an HA resource per VM with failback, and a node-affinity rule that prefers its `proxmox_node`. Every VM also has `migrate = true`: a VM found on another host is migrated back, never recreated |
 | LoadBalancer IP pool | `CiliumLoadBalancerIPPool` and `CiliumL2AnnouncementPolicy`. Services of type `LoadBalancer` (the Educates ingress or gateway) get an IP from the node network |
 | CSI drivers and StorageClasses | See [Storage](#storage). Applied after the cluster health check |
 | Educates compatibility policy | `educates-allow-in-cluster`, a Cilium policy so Educates workshop pods can reach cluster DNS, services and the API despite the Educates egress NetworkPolicy. Temporary; `educates_workshop_egress_fix = false` turns it off. See [Educates workshop network policy](#educates-workshop-network-policy) |
@@ -116,13 +116,13 @@ It finds where a node runs from the node labels `topology.kubernetes.io/region` 
 
 Caveats:
 
-- **Labels after an HA move.** The zone label is written at configuration time. After Proxmox HA moves a VM to another host, re-apply so the label follows the VM. Volumes on local datastores cannot follow a VM to another host.
+- **After an HA move.** The zone label always names the VM's `proxmox_node`. While Proxmox HA runs a VM on another host, Proxmox CSI volumes may fail to attach to it, until failback (or the next apply) brings the VM home (see [docs/operations.md](docs/operations.md#when-a-proxmox-host-fails)). Volumes on local datastores cannot follow a VM to another host.
 - **Disks per VM.** A VM accepts a limited number of SCSI disks, which caps the number of volumes per node. Prefer more, smaller worker nodes.
 
 ### Ceph CSI
 
-- **Version and CPU.** ceph-csi 3.18 and later need x86-64-v3 CPUs (AVX2). On x86-64-v2 hosts, or with the default `proxmox.cpu_type` (`x86-64-v2-AES`), set `ceph_csi.version = "3.17.2"`. `scripts/preflight.sh` checks it.
-- **Pools and Ceph clients.** Create them on the Ceph cluster, for example on a Proxmox node. Capabilities follow the [ceph-csi documentation](https://github.com/ceph/ceph-csi/blob/devel/docs/capabilities.md). The commands below match `examples/ha.tfvars.example`: one client, `kubernetes`, for both drivers, its key in `ceph_csi_user_key`. The CephFS capabilities use tags, so they cover the file system's data pools whatever their names.
+- **Version and CPU.** ceph-csi 3.18 and later need x86-64-v3 CPUs (AVX2). On x86-64-v2 hosts, or with the default `proxmox.cpu_type` (`x86-64-v2-AES`), set `ceph_csi.version = "3.17.2"`. `root-modules/educates-on-proxmox/scripts/preflight.sh` checks it.
+- **Pools and Ceph clients.** Create them on the Ceph cluster, for example on a Proxmox node. Capabilities follow the [ceph-csi documentation](https://github.com/ceph/ceph-csi/blob/devel/docs/capabilities.md). The commands below match [`examples/ha.tfvars.example`](../../root-modules/educates-on-proxmox/examples/ha.tfvars.example) of the root module: one client, `kubernetes`, for both drivers, its key in `ceph_csi_user_key`. The CephFS capabilities use tags, so they cover the file system's data pools whatever their names.
 
   ```shell
   pveceph pool create kubernetes --application rbd          # RBD pool for RWO volumes

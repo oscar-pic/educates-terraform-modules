@@ -126,7 +126,7 @@ With another CNI (for example Calico, which matches pod IPs with `ipBlock`), thi
 
 ## Check the cluster
 
-`scripts/e2e-test.sh` works with any Kubernetes cluster, not only one built by these modules. Without `talosctl` it only skips the Talos health check. Point it at your kubeconfig:
+`scripts/e2e-test.sh` works with any Kubernetes cluster, not only one built by these modules. It runs the Talos health check only on Talos nodes with `TALOSCONFIG` set, and skips it otherwise. Point it at your kubeconfig:
 
 ```shell
 git clone https://github.com/educates/educates-terraform-modules.git
