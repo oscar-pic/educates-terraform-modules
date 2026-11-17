@@ -132,6 +132,30 @@ ha-manager set vm:<vm-id> --state started     # to start it again
 
 To move a VM to another host, migrate it through HA (`ha-manager migrate vm:<vm-id> <host>`). The token of the module does not need these privileges: they are for the Proxmox administrator.
 
+
+### When a Proxmox host fails
+
+Tested by powering off one of three hosts from its BMC, with a control-plane node, a worker, the training portal and a workshop session on it, and Proxmox HA on:
+
+| After the power-off | What happened |
+|---|---|
+| ~20 s | The API, through the VIP, failed for about 15 s while the VIP moved. etcd kept quorum (2 of 3) |
+| ~1.5 min | Kubernetes marked both nodes `NotReady`. The portal and the session were down |
+| ~3 min | Proxmox HA fenced the host and started both VMs on the other hosts (shared Ceph storage) |
+| ~6 min | Both nodes `Ready`. Kubernetes had evicted their pods after 5 minutes: the session restarted on another worker, with its volume |
+| — | **The training portal did not come back by itself.** See below |
+
+Without Proxmox HA, the cluster behaves the same until the VMs come back with their host. Kubernetes still moves the pods after 5 minutes.
+
+**The training portal after a node failure.** Educates 4 bundles Kyverno with one replica, and its webhooks block pod creation while Kyverno is down. If Kyverno ran on the failed node, the portal's replacement pod is rejected. Kubernetes then waits longer and longer between retries. When Kyverno is back, restart the portal:
+
+```shell
+kubectl -n kyverno get pods                                              # Running again
+kubectl -n <portal>-ui rollout restart deployment/training-portal       # for example educates-cli-ui
+```
+
+The same applies to any pod Educates creates while Kyverno is down, for example new workshop sessions. Reported to the Educates team ([educates-feedback.md](educates-feedback.md), item 14).
+
 ## Scaling
 
 - **Adding a node.** Add it to `nodes` and apply. It joins at `talos.kubernetes_version`.

@@ -24,6 +24,7 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 | 11 | Proposal: a documentation section for on-premises clusters | Most findings here are not specific to Proxmox or Talos | — |
 | 12 | Proposal: a cluster readiness check in the Educates CLI | Users find cluster problems only when a workshop fails | `scripts/e2e-test.sh` in this repository |
 | 13 | The bundled Envoy looks up the bare name `contour` in the site DNS, every few seconds | None functionally; constant noise in the DNS servers' logs | — |
+| 14 | Bundled Kyverno: one replica, webhooks that fail closed | After losing the node Kyverno runs on, no Educates pod can be created for minutes, and the training portal stays down until restarted by hand | Documented `rollout restart` |
 
 ## 1. Workshop NetworkPolicy blocks in-cluster traffic on Cilium
 
@@ -199,3 +200,22 @@ Seen with Contour `v1.33.7`, bundled by Educates `4.0.0-alpha.13`.
 
 - `--dns-lookup-family=v4` on IPv4-only clusters (the option exists: v4, v6, auto or all);
 - or a fully qualified xDS address: `--xds-address=contour.<namespace>.svc.cluster.local.`, with the trailing dot, so no search list is walked.
+
+## 14. Bundled Kyverno: one replica, webhooks that fail closed
+
+**What we saw.** We powered off one of three Proxmox hosts, with Proxmox HA on. One worker on it ran the bundled Kyverno (every controller, one replica each), the training portal and a workshop session. Kubernetes evicted the pods after 5 minutes. The workshop session started again on another worker. The portal did not: its ReplicaSet failed to create the new pod:
+
+```text
+Error creating: Internal error occurred: failed calling webhook "vpol.validate.kyverno.svc-fail-…":
+failed to call webhook: Post "https://kyverno-svc.kyverno.svc:443/vpol/disallow-capabilities/…"
+```
+
+Kyverno came back on another node a minute later. By then, the ReplicaSet controller was backing off: the portal was still down six minutes later, until `kubectl rollout restart deployment/training-portal`. The rest of the cluster had recovered: API, nodes and session.
+
+**Why it matters.** A single node failure, or a drain of the node that runs Kyverno, blocks every pod that Educates creates, including new workshop sessions. And it can leave the portal down until someone intervenes. The portal is already a single replica (item 10).
+
+**Possible fixes:**
+
+- Run the bundled Kyverno admission controller with three replicas, spread over nodes (anti-affinity or topology spread), with a PodDisruptionBudget. This is the Kyverno project's recommendation for production.
+- Or, for the pod-security policies, a `failurePolicy` that does not block the platform's own components while Kyverno is unavailable.
+- And let the operator notice a Deployment that cannot create its pod, and retry.
