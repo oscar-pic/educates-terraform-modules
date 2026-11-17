@@ -176,6 +176,14 @@ https_code() {
 }
 
 NODE_KEYS="$(cfg '.nodes | keys[]')"
+CN="$(cfg '.cluster_name')"
+# VMs visible to the token ({vmid, name}), filled in once the Proxmox API answers. A node whose VM
+# (<cluster_name>-<key>, same VM ID) already exists belongs to this cluster: it is deployed already.
+EXISTING_VMS="[]"
+this_vm() {
+  local id; id="$(cfg --arg k "$1" '.nodes[$k].vm_id // empty')"
+  jq -e --arg n "$CN-$1" --arg id "$id" 'any(.[]; .name == $n and ($id == "" or (.vmid | tostring) == $id))' <<<"$EXISTING_VMS" >/dev/null
+}
 node_ip() { cfg --arg k "$1" '.nodes[$k].ip'; }
 API_VIP="$(cfg '.network.api_vip // empty')"
 # The first control-plane key in alphabetical order: the node the module bootstraps (and its API endpoint without a VIP).
@@ -339,10 +347,12 @@ if $PVE_OK; then
     fi
   done
 
+  api "$TOKEN" "/cluster/resources?type=vm" && EXISTING_VMS="$(jq -c '[.data[] | {vmid, name}]' "$TMP/api.json")"
   for k in $NODE_KEYS; do
     id="$(cfg --arg k "$k" '.nodes[$k].vm_id // empty')"
+    if this_vm "$k"; then pass "$k: VM $CN-$k${id:+ ($id)} already exists: this cluster is deployed"; continue; fi
     [ -n "$id" ] || { info "$k: no vm_id, Proxmox will pick one"; continue; }
-    if api "$TOKEN" "/cluster/nextid?vmid=$id"; then pass "$k: VM ID $id is free"; else warn "$k: VM ID $id is in use (expected only if this cluster already exists)"; fi
+    if api "$TOKEN" "/cluster/nextid?vmid=$id"; then pass "$k: VM ID $id is free"; else fail "$k: VM ID $id is used by another VM"; fi
   done
 
   POOL="$(cfg '.proxmox.pool // empty')"
@@ -502,10 +512,14 @@ esac
 
 for k in $NODE_KEYS; do
   ip="$(node_ip "$k")"
-  if pings "$ip"; then warn "$k: $ip answers ping. Fine if this cluster already exists; otherwise the IP is in use"; else pass "$k: $ip does not answer (free, or ping is filtered)"; fi
+  if this_vm "$k"; then pass "$k: $ip is this cluster's node (already deployed)"
+  elif pings "$ip"; then warn "$k: $ip answers ping: in use by another machine?"; else pass "$k: $ip does not answer (free, or ping is filtered)"; fi
 done
 if [ -n "$API_VIP" ]; then
-  if pings "$API_VIP"; then warn "API VIP $API_VIP answers ping. Fine if this cluster already exists; otherwise the IP is in use"; else pass "API VIP $API_VIP does not answer (free, or ping is filtered)"; fi
+  ANY_CP=false
+  for k in $(cfg '.nodes | to_entries[] | select(.value.role == "controlplane") | .key'); do this_vm "$k" && ANY_CP=true; done
+  if $ANY_CP; then pass "API VIP $API_VIP belongs to this cluster (already deployed)"
+  elif pings "$API_VIP"; then warn "API VIP $API_VIP answers ping: in use by another machine?"; else pass "API VIP $API_VIP does not answer (free, or ping is filtered)"; fi
 fi
 
 section "Internet (or mirrors) from this machine"
