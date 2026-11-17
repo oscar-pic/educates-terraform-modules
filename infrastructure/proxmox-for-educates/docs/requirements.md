@@ -61,6 +61,12 @@ The Educates documentation suggests starting with three workers of 16–32 GB ea
 
 Workshop volumes come from the storage backend, not from the node disks.
 
+**Control-plane disks and etcd.** etcd, the Kubernetes database, writes to disk on every change and needs low write latency: under about 10 ms per sync. When writes take seconds, etcd loses its leader, and Talos stops the API servers until it recovers. This can happen with the control-plane disks on shared storage such as Ceph RBD, right after bootstrap, while every node writes at the same time. On a three-host Ceph lab with 2 vCPU control planes we saw a one-minute API outage. The module retries through it, but keep it in mind:
+
+- Prefer the sizes above for control planes: 4 vCPU. Fewer cores make etcd slower to recover.
+- Prefer fast storage (SSD or NVMe) for the control-plane disks. Local storage is fastest, but then [Proxmox HA](#proxmox-ha-optional) cannot restart those VMs on another host. Three control-plane nodes on three hosts are already redundant.
+- `scripts/preflight.sh` notes when the VM datastore is shared.
+
 ## Credentials
 
 Create two API tokens. Keep their secrets out of files: pass them as `TF_VAR_*` environment variables.

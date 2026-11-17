@@ -142,6 +142,16 @@ scripts/jump-host.sh shell       # a shell there, with KUBECONFIG and TALOSCONFI
 
 [Where you deploy from](requirements.md#where-you-deploy-from-workstation-or-jump-host) explains the jump host layout, and how the scripts keep everything inside the work directory.
 
+### If the apply fails
+
+An apply can always be run again: plan and apply once more, and it continues where it stopped. What already exists is kept. Common causes:
+
+| Message | Cause | What to do |
+|---|---|---|
+| `connection refused` or a timeout to the API (`:6443`), right after the cluster is created | The API is still settling: on slow shared storage, etcd can lose its leader for a minute after bootstrap (see [requirements.md, Sizing](requirements.md#sizing)) | The module retries for about 8 minutes. If it still fails, wait a minute and apply again |
+| `403 Permission check failed` | The token lacks a privilege | `scripts/preflight.sh` names the missing one ([Credentials](requirements.md#credentials)) |
+| `the server could not find the requested resource` for a Cilium object | Cilium has not registered its CRDs yet | Apply again |
+
 ### What you get
 
 - VMs named `<cluster_name>-<node>`, running Talos, in your pool.

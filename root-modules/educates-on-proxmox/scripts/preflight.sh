@@ -336,6 +336,11 @@ if $PVE_OK; then
     if api "$TOKEN" "/nodes/$n/storage/$VM_DS/status"; then
       jq -r '.data.content' "$TMP/api.json" | tr ',' '\n' | grep -qx images \
         && pass "$n: VM datastore $VM_DS allows disk images" || fail "$n: VM datastore $VM_DS does not allow the 'images' content type"
+      # etcd writes on every change and needs low disk latency; shared storage under load may not give it.
+      if [ -z "${SHARED_NOTE:-}" ] && [ "$(jq -r '.data.shared // 0' "$TMP/api.json")" = "1" ]; then
+        SHARED_NOTE=1
+        info "VM datastore $VM_DS is shared storage ($(jq -r '.data.type' "$TMP/api.json")): etcd on the control planes needs low write latency. Right after bootstrap, a busy shared datastore can stall etcd for a minute; the apply retries through it (see requirements.md, Sizing)"
+      fi
     else
       fail "$n: VM datastore $VM_DS not found or not visible (HTTP $API_CODE)"
     fi
