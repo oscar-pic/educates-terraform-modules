@@ -147,7 +147,7 @@ Tested by powering off one of three hosts from its BMC, with a control-plane nod
 
 **When the host comes back.** Each VM has an HA rule that prefers its `proxmox_node`, and failback is on: Proxmox migrates the VMs back to their host by itself, live. Until then:
 
-- Do not apply. A VM on another host than its `proxmox_node` is migrated back by the next apply (`migrate = true`), and if its host is still down, the apply fails. It is never destroyed and created again.
+- Do not apply. A VM on another host than its `proxmox_node` is migrated back by the next apply (`migrate = true`), and if its host is still down, the apply fails. It is never destroyed and created again. A `-target` on the HA resources or rules includes the VMs too, since they depend on them.
 - Proxmox CSI volumes of a moved VM may fail to attach: the node's `topology.kubernetes.io/zone` label still names its own host.
 
 Without Proxmox HA, the cluster behaves the same until the VMs come back with their host. Kubernetes still moves the pods after 5 minutes.
