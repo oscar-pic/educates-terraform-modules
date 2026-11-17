@@ -87,7 +87,7 @@ Each one can be removed when its cause is fixed upstream.
 ## Open points
 
 - Gateway API: agree with the Educates team on who installs the Gateway API CRDs once Educates bundles agentgateway, and on how to pin the gateway address (`Gateway.spec.addresses`).
-- Not yet tested on real hardware: Proxmox HA.
+- Proxmox HA: tested creating and destroying the HA resources, and a guest shutdown (Proxmox starts the VM again). Not yet tested: a real host failure.
 - Tested on a standalone (nested) Proxmox VE 9.2 host: the `local` image datastore, Proxmox CSI on LVM-thin, NFS CSI, a cluster without an API VIP (one control-plane node, one worker), and Educates with a real workshop session.
 - The Talos health check reports a healthy cluster before every node is `Ready` with its CNI. Consider an extra readiness gate before the cluster services.
 

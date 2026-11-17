@@ -119,6 +119,19 @@ kubectl uncordon <node>
 
 CoreDNS runs two replicas that may land on the same node. Give it a PodDisruptionBudget before relying on drains.
 
+### Shutting a node down with Proxmox HA
+
+With `proxmox.ha_enabled`, every VM is an HA resource in state `started`: Proxmox starts again any VM that stops. **`talosctl shutdown` then works as a reboot.** Tested on a worker: Proxmox started the VM again about 30 seconds after the shutdown, and the node was `Ready` (and uncordoned by Talos) about 90 seconds after that. Reboots and Talos upgrades are not affected.
+
+To keep a node down, for example for maintenance of its host, stop it through HA instead. Drain it first, as above:
+
+```shell
+ha-manager set vm:<vm-id> --state stopped     # on a Proxmox host, or Datacenter > HA in the web UI
+ha-manager set vm:<vm-id> --state started     # to start it again
+```
+
+To move a VM to another host, migrate it through HA (`ha-manager migrate vm:<vm-id> <host>`). The token of the module does not need these privileges: they are for the Proxmox administrator.
+
 ## Scaling
 
 - **Adding a node.** Add it to `nodes` and apply. It joins at `talos.kubernetes_version`.
