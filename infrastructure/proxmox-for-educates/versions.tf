@@ -11,17 +11,15 @@ terraform {
       source  = "siderolabs/talos"
       version = "~> 0.12"
     }
-    # Two Helm configurations:
-    # - helm.template, without cluster access: renders the Cilium chart into the Talos
-    #   configuration, before the cluster exists.
-    # - helm (default), with access to the cluster this module creates: CSI drivers.
+    # Only renders charts, without cluster access (alias helm.template): Cilium into the
+    # Talos configuration, and the storage drivers, applied with kubectl.
     helm = {
       source                = "hashicorp/helm"
       version               = "~> 3.3"
       configuration_aliases = [helm.template]
     }
-    # Same provider as platform/educates; applies manifests whose CRDs only exist
-    # once the cluster runs (Cilium IP pools).
+    # Same provider as platform/educates. Applies the cluster services (storage drivers,
+    # Cilium IP pools) object by object, and retries while the API settles.
     kubectl = {
       source  = "alekc/kubectl"
       version = "~> 2.1"

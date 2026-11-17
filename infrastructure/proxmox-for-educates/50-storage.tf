@@ -19,10 +19,19 @@ resource "kubectl_manifest" "namespace" {
 }
 
 ###############################################################################
-# Proxmox CSI
+# Storage drivers
+#
+# Each chart is rendered with helm_template (no cluster access, like Cilium) and
+# every object is applied with its own kubectl_manifest. The kubectl provider
+# retries (apply_retry_count), so a short API outage right after bootstrap, for
+# example etcd on slow shared storage, does not fail the apply. A Helm release
+# interrupted halfway would stay "pending-install" and block every later apply.
+#
+# Secrets (Proxmox token, Ceph keys) never go into the chart values: they are
+# separate Secrets, so the rendered manifests carry nothing sensitive.
 ###############################################################################
 
-# Proxmox API credentials for the plugin, kept out of the Helm release values.
+# Proxmox API credentials for the plugin.
 resource "kubectl_manifest" "proxmox_csi_config" {
   count = var.proxmox_csi.enabled ? 1 : 0
 
@@ -47,14 +56,39 @@ resource "kubectl_manifest" "proxmox_csi_config" {
   depends_on = [kubectl_manifest.namespace]
 }
 
-resource "helm_release" "proxmox_csi" {
-  count = var.proxmox_csi.enabled ? 1 : 0
+# Ceph client keys, under the names the charts' StorageClasses refer to.
+locals {
+  ceph_secrets = {
+    rbd    = { enabled = local.ceph_rbd_enabled, name = "csi-rbd-secret", namespace = "ceph-csi-rbd", user_id = local.ceph_rbd_user_id }
+    cephfs = { enabled = local.ceph_fs_enabled, name = "csi-cephfs-secret", namespace = "ceph-csi-cephfs", user_id = local.ceph_fs_user_id }
+  }
+  ceph_secret_keys = { rbd = local.ceph_rbd_user_key, cephfs = local.ceph_fs_user_key }
+}
 
-  name       = "proxmox-csi-plugin"
-  namespace  = "csi-proxmox"
-  repository = "oci://ghcr.io/sergelogvinov/charts"
-  chart      = "proxmox-csi-plugin"
-  version    = var.proxmox_csi.version
+resource "kubectl_manifest" "ceph_secret" {
+  for_each = toset([for k, v in local.ceph_secrets : k if v.enabled])
+
+  sensitive_fields = ["stringData"]
+  yaml_body = yamlencode({
+    apiVersion = "v1"
+    kind       = "Secret"
+    metadata   = { name = local.ceph_secrets[each.key].name, namespace = local.ceph_secrets[each.key].namespace }
+    stringData = { userID = local.ceph_secrets[each.key].user_id, userKey = local.ceph_secret_keys[each.key] }
+  })
+
+  depends_on = [kubectl_manifest.namespace]
+}
+
+data "helm_template" "proxmox_csi" {
+  count    = var.proxmox_csi.enabled ? 1 : 0
+  provider = helm.template
+
+  name         = "proxmox-csi-plugin"
+  namespace    = "csi-proxmox"
+  repository   = "oci://ghcr.io/sergelogvinov/charts"
+  chart        = "proxmox-csi-plugin"
+  version      = var.proxmox_csi.version
+  kube_version = local.kubernetes_version
 
   values = [yamlencode({
     existingConfigSecret    = "proxmox-csi-config"
@@ -72,8 +106,6 @@ resource "helm_release" "proxmox_csi" {
     )]
   })]
 
-  depends_on = [kubectl_manifest.proxmox_csi_config]
-
   lifecycle {
     precondition {
       condition     = var.proxmox_csi.url != "" && var.proxmox_csi.token_id != "" && var.proxmox_csi_token_secret != "" && length(var.proxmox_csi.storage_classes) > 0
@@ -82,23 +114,22 @@ resource "helm_release" "proxmox_csi" {
   }
 }
 
-###############################################################################
-# Ceph CSI (RBD and CephFS, one namespace each: the charts share ConfigMap names)
-###############################################################################
+# Ceph CSI: RBD and CephFS, one namespace each (the charts share ConfigMap names).
+data "helm_template" "ceph_rbd" {
+  count    = local.ceph_rbd_enabled ? 1 : 0
+  provider = helm.template
 
-resource "helm_release" "ceph_rbd" {
-  count = local.ceph_rbd_enabled ? 1 : 0
-
-  name       = "ceph-csi-rbd"
-  namespace  = "ceph-csi-rbd"
-  repository = "https://ceph.github.io/csi-charts"
-  chart      = "ceph-csi-rbd"
-  version    = var.ceph_csi.version
+  name         = "ceph-csi-rbd"
+  namespace    = "ceph-csi-rbd"
+  repository   = "https://ceph.github.io/csi-charts"
+  chart        = "ceph-csi-rbd"
+  version      = var.ceph_csi.version
+  kube_version = local.kubernetes_version
 
   values = [yamlencode({
     csiConfig   = local.ceph_csi_config
     provisioner = { replicaCount = local.replicas }
-    secret      = { create = true, userID = local.ceph_rbd_user_id }
+    secret      = { create = false } # kubectl_manifest.ceph_secret
     storageClass = {
       create      = true
       name        = var.ceph_csi.rbd.storage_class
@@ -108,13 +139,6 @@ resource "helm_release" "ceph_rbd" {
     }
   })]
 
-  set_sensitive = [{
-    name  = "secret.userKey"
-    value = local.ceph_rbd_user_key
-  }]
-
-  depends_on = [kubectl_manifest.namespace]
-
   lifecycle {
     precondition {
       condition     = var.ceph_csi.cluster_id != "" && length(var.ceph_csi.monitors) > 0 && local.ceph_rbd_user_key != ""
@@ -123,19 +147,21 @@ resource "helm_release" "ceph_rbd" {
   }
 }
 
-resource "helm_release" "ceph_fs" {
-  count = local.ceph_fs_enabled ? 1 : 0
+data "helm_template" "ceph_fs" {
+  count    = local.ceph_fs_enabled ? 1 : 0
+  provider = helm.template
 
-  name       = "ceph-csi-cephfs"
-  namespace  = "ceph-csi-cephfs"
-  repository = "https://ceph.github.io/csi-charts"
-  chart      = "ceph-csi-cephfs"
-  version    = var.ceph_csi.version
+  name         = "ceph-csi-cephfs"
+  namespace    = "ceph-csi-cephfs"
+  repository   = "https://ceph.github.io/csi-charts"
+  chart        = "ceph-csi-cephfs"
+  version      = var.ceph_csi.version
+  kube_version = local.kubernetes_version
 
   values = [yamlencode({
     csiConfig   = local.ceph_csi_config
     provisioner = { replicaCount = local.replicas }
-    secret      = { create = true, userID = local.ceph_fs_user_id }
+    secret      = { create = false } # kubectl_manifest.ceph_secret
     storageClass = {
       create      = true
       name        = var.ceph_csi.cephfs.storage_class
@@ -146,13 +172,6 @@ resource "helm_release" "ceph_fs" {
     }
   })]
 
-  set_sensitive = [{
-    name  = "secret.userKey"
-    value = local.ceph_fs_user_key
-  }]
-
-  depends_on = [kubectl_manifest.namespace]
-
   lifecycle {
     precondition {
       condition     = var.ceph_csi.cluster_id != "" && length(var.ceph_csi.monitors) > 0 && local.ceph_fs_user_key != ""
@@ -161,18 +180,16 @@ resource "helm_release" "ceph_fs" {
   }
 }
 
-###############################################################################
-# NFS CSI
-###############################################################################
+data "helm_template" "nfs" {
+  count    = var.nfs_csi.enabled ? 1 : 0
+  provider = helm.template
 
-resource "helm_release" "nfs" {
-  count = var.nfs_csi.enabled ? 1 : 0
-
-  name       = "csi-driver-nfs"
-  namespace  = "csi-nfs"
-  repository = "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts"
-  chart      = "csi-driver-nfs"
-  version    = var.nfs_csi.version
+  name         = "csi-driver-nfs"
+  namespace    = "csi-nfs"
+  repository   = "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts"
+  chart        = "csi-driver-nfs"
+  version      = var.nfs_csi.version
+  kube_version = local.kubernetes_version
 
   values = [yamlencode({
     controller = { replicas = local.replicas }
@@ -187,14 +204,37 @@ resource "helm_release" "nfs" {
     }
   })]
 
-  depends_on = [kubectl_manifest.namespace]
-
   lifecycle {
     precondition {
       condition     = var.nfs_csi.server != ""
       error_message = "nfs_csi needs server."
     }
   }
+}
+
+locals {
+  csi_rendered = merge(
+    { for t in data.helm_template.proxmox_csi : "proxmox-csi" => t.manifest },
+    { for t in data.helm_template.ceph_rbd : "ceph-rbd" => t.manifest },
+    { for t in data.helm_template.ceph_fs : "ceph-fs" => t.manifest },
+    { for t in data.helm_template.nfs : "nfs" => t.manifest },
+  )
+  # One entry per object, keyed "<driver>/<kind>/<namespace>/<name>" (known at plan time).
+  csi_objects = merge([for driver, manifest in local.csi_rendered : {
+    for doc in split("\n---", "\n${manifest}") :
+    "${driver}/${yamldecode(doc).kind}/${try(yamldecode(doc).metadata.namespace, "-")}/${yamldecode(doc).metadata.name}" => doc
+    if try(yamldecode(doc).kind, null) != null
+  }]...)
+}
+
+resource "kubectl_manifest" "csi" {
+  for_each = local.csi_objects
+
+  yaml_body = each.value
+  # StorageClass parameters and CSIDriver specs are immutable: replace them on change.
+  force_new = contains(["StorageClass", "CSIDriver"], split("/", each.key)[1])
+
+  depends_on = [kubectl_manifest.namespace, kubectl_manifest.proxmox_csi_config, kubectl_manifest.ceph_secret]
 }
 
 ###############################################################################

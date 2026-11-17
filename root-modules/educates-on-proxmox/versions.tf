@@ -34,19 +34,9 @@ provider "proxmox" {
 
 provider "talos" {}
 
-# Helm without cluster access: only renders charts (Cilium) into the Talos config.
+# Helm without cluster access: only renders charts (Cilium, the storage drivers).
 provider "helm" {
   alias = "template"
-}
-
-# Cluster access for the cluster services and Educates, from the cluster just created.
-provider "helm" {
-  kubernetes = {
-    host                   = module.cluster.kubernetes.host
-    cluster_ca_certificate = module.cluster.kubernetes.cluster_ca_certificate
-    client_certificate     = module.cluster.kubernetes.client_certificate
-    client_key             = module.cluster.kubernetes.client_key
-  }
 }
 
 provider "kubectl" {
@@ -55,8 +45,9 @@ provider "kubectl" {
   client_certificate     = module.cluster.kubernetes.client_certificate
   client_key             = module.cluster.kubernetes.client_key
   load_config_file       = false
-  # The LoadBalancer IP pool and L2 policy are Cilium CRs. The Talos health check can
-  # pass before the Cilium operator registers their CRDs: retry for ~8 minutes
-  # (exponential backoff, 3 s to 30 s) instead of failing the first apply.
+  # Retry for ~8 minutes (exponential backoff, 3 s to 30 s) instead of failing the first
+  # apply. The Talos health check can pass before Cilium registers its CRDs (LoadBalancer
+  # IP pool), and before the API is stable: etcd on slow shared storage can lose its
+  # leader for a minute right after bootstrap, while every node pulls images.
   apply_retry_count = 20
 }

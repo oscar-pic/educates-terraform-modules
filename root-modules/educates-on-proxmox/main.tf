@@ -16,7 +16,6 @@ module "cluster" {
   providers = {
     proxmox       = proxmox
     talos         = talos
-    helm          = helm
     helm.template = helm.template
     kubectl       = kubectl
   }

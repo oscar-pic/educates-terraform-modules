@@ -32,7 +32,7 @@ One `infrastructure/<provider>-for-educates` module leaves the cluster ready for
 - **Topology labels.** `topology.kubernetes.io/region` is the Proxmox cluster, and `topology.kubernetes.io/zone` is the Proxmox node. Proxmox CSI needs them.
 - **Optional:** Gateway API CRDs (a Talos external manifest) with Cilium's Gateway API controller; Proxmox HA resources; a storage network.
 
-**Cluster services (files `40-` to `50-`)**, applied with the `helm` and `kubectl` providers once the cluster is healthy:
+**Cluster services (files `40-` to `50-`)**, applied once the cluster is healthy: charts rendered with `helm_template` and applied object by object with the `kubectl` provider, which retries while the API settles:
 
 - **LoadBalancer IPs.** A `CiliumLoadBalancerIPPool` and a `CiliumL2AnnouncementPolicy`.
 - **Storage.** One or more drivers, with exactly one default StorageClass:
@@ -68,6 +68,7 @@ The tested Educates configuration on this cluster is `EducatesConfig` in `Manage
 | Kubernetes upgrades | `talos_cluster.kubernetes_version` | `upgrade-k8s`, with health gating |
 | Node reboots | Never by the provider (`reboot_after_update = false`) | Reboots in parallel would break etcd quorum |
 | In-cluster services | Terraform providers after the cluster is healthy, not shell scripts | Idempotent; updates work |
+| Storage drivers | Charts rendered with `helm_template`, applied object by object with `kubectl_manifest`; no `helm_release` | The kubectl provider retries through a short API outage after bootstrap. An interrupted Helm release stays `pending-install` and blocks every later apply |
 | Educates installation | Out of scope: its own installer | This work is the layer below |
 | Ingress | Not installed here: Educates 4 bundles Contour (and later agentgateway) | One owner per component |
 | Resource pool | An existing pool by default; creating its last level is optional | Pools often belong to the Proxmox administrator; ACLs on the pool survive VM destroys |

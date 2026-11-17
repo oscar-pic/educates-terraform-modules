@@ -25,8 +25,8 @@ It does not install an ingress controller or cert-manager: the Educates 4 operat
 
 The module expects its providers from the root module, as the EKS and GKE modules do:
 
-- **`helm.template`**, without cluster access. It renders the Cilium chart into the Talos configuration, before the cluster exists.
-- **`helm` and `kubectl`**, configured from this module's `kubernetes` output. They install the cluster services once the cluster passes its health check.
+- **`helm.template`**, without cluster access. It renders charts: Cilium into the Talos configuration, before the cluster exists, and the storage drivers.
+- **`kubectl`**, configured from this module's `kubernetes` output. It applies the cluster services once the cluster passes its health check, and retries while the API settles.
 
 See [root-modules/educates-on-proxmox](../../root-modules/educates-on-proxmox/) for a complete example.
 
@@ -35,22 +35,13 @@ provider "helm" {
   alias = "template"
 }
 
-provider "helm" {
-  kubernetes = {
-    host                   = module.cluster.kubernetes.host
-    cluster_ca_certificate = module.cluster.kubernetes.cluster_ca_certificate
-    client_certificate     = module.cluster.kubernetes.client_certificate
-    client_key             = module.cluster.kubernetes.client_key
-  }
-}
-
 provider "kubectl" {
   host                   = module.cluster.kubernetes.host
   cluster_ca_certificate = module.cluster.kubernetes.cluster_ca_certificate
   client_certificate     = module.cluster.kubernetes.client_certificate
   client_key             = module.cluster.kubernetes.client_key
   load_config_file       = false
-  apply_retry_count      = 20 # Cilium registers its CRDs a little after the cluster is healthy
+  apply_retry_count      = 20 # the API can still settle (and Cilium register its CRDs) after the health check
 }
 
 module "cluster" {
@@ -59,7 +50,6 @@ module "cluster" {
   providers = {
     proxmox       = proxmox
     talos         = talos
-    helm          = helm
     helm.template = helm.template
     kubectl       = kubectl
   }
