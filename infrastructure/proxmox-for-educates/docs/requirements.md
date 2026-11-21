@@ -68,6 +68,7 @@ Workshop volumes come from the storage backend, not from the node disks.
 
 - Prefer the sizes above for control planes: 4 vCPU. Fewer cores make etcd slower to recover.
 - Prefer fast storage (SSD or NVMe) for the control-plane disks. Local storage is fastest, but then [Proxmox HA](#proxmox-ha-optional) cannot restart those VMs on another host. Three control-plane nodes on three hosts are already redundant.
+- It can also happen later, under load. On another cluster, with the control-plane disks on Ceph over a 1 Gb/s network, etcd syncs took 1 to 2 s while the first workshop session pulled its 1.3 GB image, and the controllers that use leader election restarted. Workshop image pulls are heavy, and come in bursts at the start of a class: the nodes write the images to their own disks, on the same Ceph as etcd. Give the Proxmox hosts' Ceph a fast network of its own (10 Gb/s or more), and warm the image cache on every node before a class (`--reserved`, or a first session per node).
 - `scripts/preflight.sh` notes when the VM datastore is shared.
 
 ## Credentials
