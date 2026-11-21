@@ -93,9 +93,3 @@ locals {
   ceph_fs_user_id   = coalesce(var.ceph_csi.cephfs.user_id, var.ceph_csi.user_id)
   ceph_fs_user_key  = var.ceph_csi_cephfs_user_key != "" ? var.ceph_csi_cephfs_user_key : var.ceph_csi_user_key
 }
-
-locals {
-  # Talos API endpoint for cluster-wide operations: the VIP when there is one (it follows the
-  # control planes), otherwise the bootstrap node.
-  talos_endpoint = coalesce(var.network.api_vip, local.bootstrap_ip)
-}

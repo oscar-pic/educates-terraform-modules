@@ -142,8 +142,9 @@ resource "talos_machine" "node" {
 # Bootstraps etcd once, then owns Kubernetes upgrades (changing kubernetes_version
 # runs upgrade-k8s, node by node with health gating).
 resource "talos_cluster" "this" {
-  node                 = local.bootstrap_ip
-  endpoint             = local.talos_endpoint
+  node = local.bootstrap_ip
+  # A node, never the API VIP: the VIP only comes up once etcd runs, after the bootstrap.
+  endpoint             = local.bootstrap_ip
   control_plane_nodes  = local.cp_ips
   client_configuration = talos_machine_secrets.this.client_configuration
   kubernetes_version   = "v${local.kubernetes_version}"
@@ -159,7 +160,7 @@ resource "talos_cluster" "this" {
 
 resource "talos_cluster_kubeconfig" "this" {
   node                 = local.bootstrap_ip
-  endpoint             = local.talos_endpoint
+  endpoint             = local.bootstrap_ip
   client_configuration = talos_machine_secrets.this.client_configuration
 
   depends_on = [talos_cluster.this]
