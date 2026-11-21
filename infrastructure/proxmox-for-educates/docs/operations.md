@@ -232,6 +232,9 @@ kubectl get crd -o name | grep -E '\.educates\.dev$' | xargs -r kubectl delete
 #    If that hangs, SecretCopiers are stuck with a finalizer nobody removes any more:
 #    kubectl get secretcopiers.secrets.educates.dev -o name | \
 #      xargs -r -I{} kubectl patch {} --type=merge -p '{"metadata":{"finalizers":null}}'
+#    Kyverno may leave behind webhooks it created itself (failurePolicy Fail, pointing to a
+#    Service that no longer exists). Delete them:
+kubectl delete validatingwebhookconfigurations,mutatingwebhookconfigurations -l webhook.kyverno.io/managed-by=kyverno
 # 5. Check: no volumes left, and nothing of Educates, Contour or Kyverno (no output).
 kubectl get pv
 kubectl get namespaces,crd,apiservices,validatingwebhookconfigurations,mutatingwebhookconfigurations,ingressclasses,clusterroles,clusterrolebindings \

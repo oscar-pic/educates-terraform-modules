@@ -139,12 +139,15 @@ Also in the portal log, at start-up: kopf cannot list CRDs (`customresourcedefin
 
 A second uninstall the next day behaved differently. SecretCopiers of an already-deleted portal were still there after 3 minutes. That time they disappeared with the platform, and no finalizer got stuck. The cleanup of SecretCopiers is not reliable either way.
 
+A third uninstall, on a freshly built cluster, also left a `ValidatingWebhookConfiguration` of Kyverno's, `kyverno-cleanup-validating-webhook-cfg` (`failurePolicy: Fail`, label `webhook.kyverno.io/managed-by: kyverno`). Kyverno's controllers create these webhooks themselves, so `helm uninstall` does not remove them, and this one outlived its controller and the Service it calls.
+
 **Possible fixes.**
 
 - `platform delete` waits for, or deletes, the SecretCopiers (and other kopf-managed objects) while the secrets manager still runs, or refuses while portals still exist.
 - `--purge` removes the `educates` namespace it created.
+- Removing the bundled Kyverno also removes the webhook configurations labelled `webhook.kyverno.io/managed-by: kyverno`.
 
-**Here.** The getting-started guide documents the order: portals, then wait for the SecretCopiers to disappear, then the platform, then the namespace and CRDs.
+**Here.** [operations.md](operations.md#uninstalling-educates) documents the order: portals, then wait for the SecretCopiers to disappear, then the platform, then the namespace, the CRDs and Kyverno's webhooks, and a final check that nothing is left.
 
 ## 10. The training portal is a single point of failure during node maintenance
 
