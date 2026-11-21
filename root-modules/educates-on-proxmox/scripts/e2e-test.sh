@@ -311,8 +311,8 @@ else
   for ns in educates-installer educates contour kyverno; do
     kubectl get namespace "$ns" >/dev/null 2>&1 || continue
     BAD=$(kubectl -n "$ns" get deployments,statefulsets,daemonsets -o json | jq -r '.items[]
-      | if .kind == "DaemonSet" then [.status.desiredNumberScheduled // 0, .status.numberReady // 0]
-        else [.spec.replicas // 1, .status.readyReplicas // 0] end as [$want, $ready]
+      | (if .kind == "DaemonSet" then [.status.desiredNumberScheduled // 0, .status.numberReady // 0]
+        else [.spec.replicas // 1, .status.readyReplicas // 0] end) as [$want, $ready]
       | select($ready < $want) | "\(.kind)/\(.metadata.name) \($ready)/\($want)"')
     if [ -z "$BAD" ]; then pass "$ns: all workloads ready"
     else

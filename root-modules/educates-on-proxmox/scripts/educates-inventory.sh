@@ -64,13 +64,13 @@ echo
 echo "== 1. Workloads"
 for n in $NEW_NS; do
   $K -n "$n" get deployments,statefulsets,daemonsets -o json | jq -r --arg n "$n" '.items[]
-    | if .kind == "DaemonSet" then [.status.desiredNumberScheduled // 0, .status.numberReady // 0]
-      else [.spec.replicas // 1, .status.readyReplicas // 0] end as [$want, $ready]
+    | (if .kind == "DaemonSet" then [.status.desiredNumberScheduled // 0, .status.numberReady // 0]
+      else [.spec.replicas // 1, .status.readyReplicas // 0] end) as [$want, $ready]
     | "   \(if $ready < $want then "NOT READY" else "ready    " end) \($n)/\(.kind)/\(.metadata.name) \($ready)/\($want)"'
 done
 NOTREADY=$(for n in $NEW_NS; do $K -n "$n" get deployments,statefulsets,daemonsets -o json | jq -r '.items[]
-  | if .kind == "DaemonSet" then [.status.desiredNumberScheduled // 0, .status.numberReady // 0]
-    else [.spec.replicas // 1, .status.readyReplicas // 0] end as [$w, $r] | select($r < $w) | .metadata.name'; done | wc -l | tr -d ' ')
+  | (if .kind == "DaemonSet" then [.status.desiredNumberScheduled // 0, .status.numberReady // 0]
+    else [.spec.replicas // 1, .status.readyReplicas // 0] end) as [$w, $r] | select($r < $w) | .metadata.name'; done | wc -l | tr -d ' ')
 [ "$NOTREADY" = 0 ] || { ATTENTION=$((ATTENTION + NOTREADY)); echo "   >>> $NOTREADY workload(s) not ready: see their events (kubectl get events -n <namespace>)"; }
 echo
 
