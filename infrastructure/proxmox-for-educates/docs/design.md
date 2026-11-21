@@ -91,6 +91,7 @@ Each one can be removed when its cause is fixed upstream.
 - Proxmox HA: creating and destroying the HA resources, a guest shutdown (Proxmox starts the VM again), a host power-off, and failback when the host returns (see [operations.md](operations.md#when-a-proxmox-host-fails)).
 - A standalone (nested) Proxmox VE 9.2 host: the `local` image datastore, Proxmox CSI on LVM-thin, NFS CSI, a cluster without an API VIP.
 - Educates 4 on each of them, with real workshop sessions.
+- A Talos cluster built and run by another team, without internet access from pods: the [bring-your-own-cluster](bring-your-own-cluster.md#tested-on) procedure, from the first check to the uninstall.
 
 ## Open points
 

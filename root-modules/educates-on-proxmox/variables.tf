@@ -66,6 +66,12 @@ variable "gateway_api" {
   default     = {}
 }
 
+variable "extra_config_patches" {
+  description = "Extra Talos config patches (YAML strings) for all, controlplane or worker nodes: for example a TrustedRootsConfig or registry mirrors. See infrastructure/proxmox-for-educates."
+  type        = any
+  default     = {}
+}
+
 variable "load_balancer" {
   description = "LoadBalancer IP pools and interfaces. See infrastructure/proxmox-for-educates."
   type        = any

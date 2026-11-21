@@ -223,11 +223,11 @@ educatesClusterConfig:
     certificates:
       provider: StaticCertificate           # serves your certificate as is
       staticCertificate:
-        tlsSecretRef:
-          name: educates-wildcard-tls
+        tlsSecretRef:                       # yours; the operator copies it to educates-wildcard-tls
+          name: educates-static-tls
           namespace: educates-installer
-        caCertificateSecretRef:
-          name: educates-ca
+        caCertificateSecretRef:             # workshop pods trust this CA
+          name: educates-static-ca
           namespace: educates-installer
   policyEnforcement:
     clusterPolicy:
@@ -237,20 +237,42 @@ educatesClusterConfig:
     kyverno:
       provider: Bundled
 secretsManager: {}
-sessionManager: {}
+sessionManager:
+  nodeCATrust:
+    mode: Disabled                          # see below: it cannot work on Talos
 ```
 
 Then deploy it, and give the ingress the IP you chose in step 1. Educates 4 has no setting for it, so pin it on the Service:
 
 ```shell
 kubectl create namespace educates-installer
-kubectl -n educates-installer create secret tls educates-wildcard-tls --cert=tls.crt --key=tls.key
-kubectl -n educates-installer create secret generic educates-ca --from-file=ca.crt=ca.crt
+kubectl -n educates-installer create secret tls educates-static-tls --cert=tls.crt --key=tls.key
+kubectl -n educates-installer create secret generic educates-static-ca --from-file=ca.crt=ca.crt
 educates admin platform deploy --config educates.yaml          # about 5 minutes
 
 kubectl -n contour annotate service contour-envoy lbipam.cilium.io/ips=<ingress IP> --overwrite
 kubectl -n contour get service contour-envoy                    # EXTERNAL-IP is <ingress IP>
 ```
+
+About the two Secrets and the node CA trust:
+
+- **Secret names.** Do not name your Secret `educates-wildcard-tls`: that is the copy the operator makes and owns. The operator keeps its copy up to date, so to renew the certificate you only replace `educates-static-tls`, by hand or with a tool such as External Secrets ([operations.md](operations.md)).
+- **`nodeCATrust`.** With a CA configured, Educates installs by default a `node-ca-injector` DaemonSet that writes the CA into `/etc/containerd/certs.d` on every node, so the nodes can pull images from registries served under your domain (workshops that run an image registry in the session). On Talos it cannot work: its pods are privileged with a `hostPath`, which Talos's default Pod Security (`baseline`) rejects, and Talos's containerd does not read that directory. The install still reports `Ready`, with the DaemonSet at 0 pods. Disable it. When nodes must trust your CA, for example with your own lab CA, add it to Talos instead, with a `TrustedRootsConfig` document in `extra_config_patches.all` of your tfvars:
+
+  ```hcl
+  extra_config_patches = {
+    all = [<<-EOF
+      apiVersion: v1alpha1
+      kind: TrustedRootsConfig
+      name: workshops-ca
+      certificates: |
+        -----BEGIN CERTIFICATE-----
+        ...the content of ca.crt...
+        -----END CERTIFICATE-----
+      EOF
+    ]
+  }
+  ```
 
 ### Run a sample workshop
 

@@ -203,17 +203,17 @@ Procedure:
 
 ## Renewing the Educates certificate
 
-`StaticCertificate` renews nothing. When the certificate is renewed (by your CA's tooling, or by you), update the Secret. Educates copies it by itself to the namespaces that use it, with no redeploy:
+`StaticCertificate` renews nothing. When the certificate is renewed (by your CA's tooling, or by you), update your Secret, `educates-static-tls`. The operator keeps its own copy (`educates-wildcard-tls`) in step with it, and Educates passes it on to the namespaces that use it, with no redeploy. So a tool that keeps the Secret up to date, such as External Secrets reading from a vault, renews the certificate with no work in Educates:
 
 ```shell
-kubectl -n educates-installer create secret tls educates-wildcard-tls --cert=tls.crt --key=tls.key \
+kubectl -n educates-installer create secret tls educates-static-tls --cert=tls.crt --key=tls.key \
   --dry-run=client -o yaml | kubectl apply -f -
 # A minute or two later, check what the ingress serves:
 echo | openssl s_client -connect <any-host>.<domain>:443 -servername <any-host>.<domain> 2>/dev/null \
   | openssl x509 -noout -issuer -enddate
 ```
 
-Do the same with `educates-ca` if the root CA changes. The certificate's `notAfter` date tells you when to renew.
+Do the same with `educates-static-ca` if the root CA changes. The certificate's `notAfter` date tells you when to renew.
 
 ## Uninstalling Educates
 
@@ -232,9 +232,13 @@ kubectl get crd -o name | grep -E '\.educates\.dev$' | xargs -r kubectl delete
 #    If that hangs, SecretCopiers are stuck with a finalizer nobody removes any more:
 #    kubectl get secretcopiers.secrets.educates.dev -o name | \
 #      xargs -r -I{} kubectl patch {} --type=merge -p '{"metadata":{"finalizers":null}}'
-# 5. Check: no volumes left.
+# 5. Check: no volumes left, and nothing of Educates, Contour or Kyverno (no output).
 kubectl get pv
+kubectl get namespaces,crd,apiservices,validatingwebhookconfigurations,mutatingwebhookconfigurations,ingressclasses,clusterroles,clusterrolebindings \
+  -o name | grep -E 'educates|kyverno|contour|wgpolicyk8s'
 ```
+
+On a cluster you did not build, the last command may also list objects of the cluster owner's that only carry the name, such as the binding that gave you access: check before deleting anything it shows.
 
 ## Destroying a cluster
 

@@ -1,6 +1,6 @@
 # Feedback for the Educates team
 
-Findings from running Educates 4 on these modules: Talos Linux on Proxmox VE, Cilium as the CNI, Cilium LoadBalancer IPs. Each item says:
+Findings from running Educates 4 on these modules: Talos Linux on Proxmox VE, Cilium as the CNI, Cilium LoadBalancer IPs. Items 15 to 18 come from installing it on a Talos cluster run by another team, without internet access from pods ([bring-your-own-cluster.md](bring-your-own-cluster.md)). Each item says:
 
 - what we saw;
 - why it matters;
@@ -25,6 +25,10 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 | 12 | Proposal: a cluster readiness check in the Educates CLI | Users find cluster problems only when a workshop fails | `scripts/e2e-test.sh` in this repository |
 | 13 | The bundled Envoy looks up the bare name `contour` in the site DNS, every few seconds | None functionally; constant noise in the DNS servers' logs | — |
 | 14 | Bundled Kyverno: one replica, webhooks that fail closed | After losing the node Kyverno runs on, no Educates pod can be created for minutes, and the training portal stays down until restarted by hand | Documented `rollout restart` |
+| 15 | `platform render` does not show what the operator installs | A cluster owner cannot review Kyverno, Contour, their webhooks and roles before the install | `scripts/educates-inventory.sh` right after the install |
+| 16 | The bundled Kyverno chart takes no values | Its webhooks, replicas and resources cannot be adapted to a shared cluster | — |
+| 17 | `nodeCATrust: Auto` installs a node CA injector that Pod Security `baseline` refuses, and the install still reports `Ready` | A DaemonSet at 0 pods, unnoticed; on Talos it could not work anyway | Documented `nodeCATrust.mode: Disabled`; the e2e check flags workloads not ready |
+| 18 | The session manager is bound to `admin` cluster-wide | Hard to accept on a cluster that also runs other workloads | Documented for the cluster owner's review |
 
 ## 1. Workshop NetworkPolicy blocks in-cluster traffic on Cilium
 
@@ -219,3 +223,45 @@ Kyverno came back on another node a minute later. By then, the ReplicaSet contro
 - Run the bundled Kyverno admission controller with three replicas, spread over nodes (anti-affinity or topology spread), with a PodDisruptionBudget. This is the Kyverno project's recommendation for production.
 - Or, for the pod-security policies, a `failurePolicy` that does not block the platform's own components while Kyverno is unavailable.
 - And let the operator notice a Deployment that cannot create its pod, and retry.
+
+## 15. `platform render` does not show what the operator installs
+
+**What we saw.** The cluster owner asked to review everything Educates would create at cluster scope before the install: admission webhooks, policies, CRDs, ClusterRoles, the Envoy Service. `educates admin platform render --config educates.yaml` printed 44 lines: empty operator chart values and the `EducatesClusterConfig`, `SecretsManager` and `SessionManager` resources. Contour and Kyverno, with their webhooks, CRDs and roles, are installed later by the operator, from charts embedded in it, with values it computes. `helm template` of the `educates-installer` chart adds the operator itself (4 CRDs, 4 ClusterRoles), still not the cluster services.
+
+**Why it matters.** On a cluster that also runs other services, the owner wants to know what a webhook that fails closed will intercept before it exists. We could only offer to install, list what was created (`scripts/educates-inventory.sh` in this repository) and uninstall if needed.
+
+**Possible fixes:**
+
+- An option of `platform render` that also renders the bundled charts with the values the operator would use (for example `--include-cluster-services`).
+- Or a page in the documentation listing, per release, what each bundled chart creates at cluster scope and with which values.
+
+## 16. The bundled Kyverno chart takes no values
+
+**What we saw.** The operator installs Kyverno with the chart defaults; the only value it sets is the image registry. Its `webhooks.namespaceSelector` excludes `kube-system` only, its admission controller runs one replica (item 14), and its resources cannot be set. In our test the result was acceptable: the webhooks that check workloads only apply to namespaces labelled by Educates, and the ones that apply everywhere only concern Kyverno's own resource types. But the cluster owner asked to exclude a list of their namespaces explicitly, and there was no way to do it.
+
+**Possible fix.** A pass-through for the Kyverno chart values in the `EducatesClusterConfig` (as for other bundled services), or at least for the webhook namespace selector, the replicas and the resources.
+
+## 17. `nodeCATrust: Auto` installs a node CA injector that cannot run, and the install reports `Ready`
+
+**What we saw.** With a CA configured (`staticCertificate.caCertificateSecretRef`), the session manager installs the `node-ca-injector` DaemonSet by default. Its pods are privileged and mount `/etc/containerd/certs.d` from the host. Talos enforces Pod Security `baseline` cluster-wide by default, so every pod was refused:
+
+```text
+Error creating: pods "node-ca-injector-…" is forbidden: violates PodSecurity "baseline:latest":
+hostPath volumes (volume "containerd-certs-d"), privileged (container "sync" must not set securityContext.privileged=true)
+```
+
+The install finished, and every platform resource reported `Ready`, with the DaemonSet at 0 of 6 pods. We noticed only because the cluster owner did. On Talos the injector could not work anyway: Talos's containerd does not read `/etc/containerd/certs.d`. Nodes trust a CA through the Talos machine configuration (`TrustedRootsConfig`). `nodeCATrust.mode: Disabled` removed it cleanly.
+
+**Possible fixes:**
+
+- Report a condition that is not ready (or a warning) on the `SessionManager` when the DaemonSet cannot create its pods.
+- Label its namespace for the Pod Security level it needs, as Educates does for workshop namespaces with the `pod-security-standards` engine, or document that it needs `privileged`.
+- Document `nodeCATrust` with the distributions where it does not apply (Talos, and others with an immutable containerd configuration).
+
+## 18. The session manager is bound to `admin` cluster-wide
+
+**What we saw.** The ClusterRoleBinding `educates:session-manager:admin` binds the ServiceAccount `educates/session-manager` to the built-in `admin` ClusterRole for the whole cluster, which includes reading and writing Secrets in every namespace. The operator itself runs with a fine-grained ClusterRole generated from what it installs. The cluster owner accepted it for a temporary trial only.
+
+**Why it matters.** Educates recommends a dedicated cluster, and this is one reason. But for trials, or for organisations that run Educates next to other services, it is the first thing a security review stops at.
+
+**Possible fix.** Bind `admin` only in the namespaces the session manager creates (it creates them, so it can add the RoleBinding), and keep cluster-wide only what it needs at cluster scope, as was done for the operator.

@@ -21,8 +21,11 @@ They can be the same team. The first check of a provided cluster goes in this or
 | 2 | Cluster owner | Runs [the cluster check](#check-the-cluster) with a `cluster-admin` kubeconfig, before anything is installed, and sends the output |
 | 3 | Both | Go through every `FAIL` and `WARN`. Each one points to a section below: [Storage](#storage), [LoadBalancer IPs](#loadbalancer-ips), [Workshop network policy](#workshop-network-policy-cilium-only). The owner fixes them, by hand or through GitOps, and runs the check again until it passes |
 | 4 | Cluster owner | Provides what the check cannot see: the domain and its wildcard DNS record, the ingress IP (one address of the LoadBalancer range), the wildcard certificate with its CA, and access for the Educates installer (a `cluster-admin` kubeconfig, a machine that reaches the API on TCP 6443 and the ingress IP on TCP 80 and 443) |
-| 5 | Cluster owner | Without internet access from the cluster: mirrors the [images Educates pulls](#clusters-without-internet-access) |
-| 6 | Educates installer | Installs Educates ([getting-started.md](getting-started.md#5-install-educates)), pins the ingress IP, and runs the check again with `--workshop`: a real workshop session over HTTPS |
+| 5 | Cluster owner | Without internet access from the cluster: mirrors the [images Educates pulls](#clusters-without-internet-access), and gives the installer a project in an internal registry for workshop content |
+| 6 | Educates installer | Installs Educates ([getting-started.md](getting-started.md#5-install-educates)), pins the ingress IP, and sends the [inventory](#review-what-was-installed) of what the install created |
+| 7 | Cluster owner | [Reviews the inventory](#review-what-was-installed) before any workshop is opened |
+| 8 | Educates installer | Opens a first workshop: `scripts/e2e-test.sh --workshop` runs a real session over HTTPS. Without internet access, publish the workshop content to the internal registry first |
+| 9 | Both | At the end of a trial: keep the environment (and automate the [certificate renewal](operations.md#renewing-the-educates-certificate)), or [uninstall Educates](operations.md#uninstalling-educates) and let the owner check that nothing is left |
 
 ## What Educates needs from the cluster
 
@@ -147,13 +150,30 @@ With another CNI (for example Calico, which matches pod IPs with `ipBlock`), thi
 Tested with Educates `4.0.0-alpha.13` in `Managed` mode, the mode in [getting-started.md](getting-started.md#5-install-educates):
 
 - **The Educates installer:** a Helm chart in namespace `educates-installer`. It runs the Educates operator, adds the CRDs of `config.educates.dev` and `platform.educates.dev`, and creates the ClusterRoles `educates:installer:*` and `educates:rbac:*`. The operator runs with a fine-grained ClusterRole generated from the charts it installs, not `cluster-admin`. The chart value `rbac.clusterAdmin` binds it to `cluster-admin` instead, as a fallback.
-- **The platform**, installed by the operator: the secrets manager, session manager, lookup service, node CA injector (a DaemonSet) and remote access. Their CRDs are in `secrets.educates.dev` and `training.educates.dev`.
-- **Cluster services**, from charts bundled with the operator: Contour (with an Envoy `LoadBalancer` Service), Kyverno (cluster-wide admission webhooks and policies), and, when the configuration uses them, cert-manager and external-dns.
-- **At run time**, the session manager creates namespaces, Roles, RoleBindings, ResourceQuotas and LimitRanges for every workshop environment and session.
+- **The platform**, installed by the operator: the secrets manager, session manager, lookup service and remote access, in namespace `educates`. Their CRDs are in `secrets.educates.dev` and `training.educates.dev`. With a CA configured, also a node CA injector DaemonSet: disable it on Talos (`nodeCATrust`, see [getting-started.md](getting-started.md#configure-and-deploy)).
+- **Cluster services**, from charts bundled with the operator: Contour (with an Envoy `LoadBalancer` Service, and an IngressClass `contour` marked as the cluster default), Kyverno (admission webhooks and policies), and, when the configuration uses them, cert-manager and external-dns. With `StaticCertificate` there is no cert-manager and no ClusterIssuer; a cert-manager the cluster already runs is left alone.
+- **At run time**, the session manager creates namespaces, Roles, RoleBindings, ResourceQuotas and LimitRanges for every workshop environment and session, and a Kyverno policy per workshop environment.
 
 Installing it needs `cluster-admin`. In `Inline` mode (`EducatesInlineConfig`), the operator uses an ingress controller, a wildcard certificate and a policy engine that already exist, and installs nothing at cluster scope. That mode is not tested here.
 
-To review everything before installing, render it: `educates admin platform render --config educates.yaml`.
+### Review what was installed
+
+`educates admin platform render --config educates.yaml` does not show all of it: only the operator's chart values and the platform resources. Contour, Kyverno, their webhooks, CRDs and roles are installed later by the operator itself, from charts embedded in it, with values it computes. The reliable review is of what is really there, right after the install and before any workshop is opened:
+
+```shell
+scripts/educates-inventory.sh --snapshot crds.before          # BEFORE installing
+educates admin platform deploy --config educates.yaml
+scripts/educates-inventory.sh --before crds.before > inventory.txt
+```
+
+It lists the workloads (and flags any not fully ready), every admission webhook with its `failurePolicy`, `namespaceSelector` and the namespaces it applies to, the Kyverno policies, the CRDs created and any existing CRD the install changed, ClusterRoles and bindings, the IngressClass, the ingress Service and the images pulled. If the owner does not accept something, `educates admin platform delete` removes it ([operations.md](operations.md#uninstalling-educates)).
+
+What a cluster owner usually asks about, as tested with `4.0.0-alpha.13`:
+
+- **Admission webhooks.** The webhooks that check workloads (pods and their controllers) fail closed, but only apply to namespaces labelled by Educates (`training.educates.dev/policy.engine`, and per workshop environment its own labels): other namespaces are not affected. Kyverno also validates its own resource types (its policies, exceptions, cleanup policies) in every namespace, failing closed; nothing else goes through those. The operator installs Kyverno with the chart defaults, so these webhooks cannot be tuned. Kyverno runs one replica: while it is down, no pod can be created in workshop namespaces ([educates-feedback.md](educates-feedback.md), item 14).
+- **Policies.** The Pod Security policies are Kyverno `ValidatingPolicy` resources in `Audit` mode, scoped to Educates namespaces. The workshop policies (no `LoadBalancer` Services, no NodePorts, ingress rules…) are created per workshop environment and enforced in its session namespaces only.
+- **Permissions.** The session manager's ServiceAccount (`educates/session-manager`) is bound to the `admin` ClusterRole cluster-wide: it can read and change most namespaced objects, Secrets included, in every namespace. The operator's ClusterRole has `bind` and `escalate` on ClusterRoles, which it needs to install Kyverno and Contour. Both are why Educates recommends a dedicated cluster.
+- **CRDs it does not own.** Contour reads Gateway API objects but, as configured by Educates, processes none and installs no Gateway API CRDs: a GatewayClass of another controller (Cilium's, for example) is not touched.
 
 ## Clusters without internet access
 
@@ -167,14 +187,24 @@ Each Educates release publishes the list of images it uses: `educates-images-<ve
 | `docker.io` | Envoy, `docker:*-dind`, `debian` (short names resolve to `docker.io`) |
 | `registry.k8s.io` | external-dns |
 
-On Talos, the simplest way is a pull-through cache (for example Harbor) per registry and a registry mirror in the machine configuration (`machine.registries.mirrors`). Image names do not change, so nothing in Educates needs configuring. Two things stay outside the mirrors:
+On Talos, the simplest way is a pull-through cache (for example Harbor) per registry and a registry mirror in the machine configuration (`machine.registries.mirrors`, or `extra_config_patches` with the modules here). Image names do not change, so nothing in Educates needs configuring. Two things stay outside the mirrors:
 
-- **Workshop images and content.** Each workshop has its own images, and many download their files when the session starts (for example from GitHub or `ghcr.io`), from inside the session pod. Check each workshop you plan to run.
-- **The cluster check** pulls `registry.k8s.io/e2e-test-images/agnhost`, and with `--workshop` a sample workshop from GitHub.
+- **Workshop content.** Each workshop's images go through the mirrors like any other, pulled by the nodes. But many workshops download their files when the session starts, from inside the session pod (for example `ghcr.io/educates/<workshop>-files`, an OCI image of the workshop's files). Without internet access, publish the files to an internal registry and deploy the workshop from the exported definition:
+
+  ```shell
+  git clone https://github.com/educates/lab-k8s-fundamentals.git && cd lab-k8s-fundamentals   # a workshop's source
+  educates publish-workshop --image-repository registry.example.com/educates --workshop-version 9.0 \
+    --registry-username "$REGISTRY_USER" --registry-password "$REGISTRY_PASSWORD" \
+    --registry-ca-cert-path ca.crt --export-workshop ../workshop.yaml
+  educates deploy-workshop -f ../workshop.yaml --initial 1 --overdue 10m
+  ```
+
+  The session pod pulls the files over HTTPS: it trusts the registry's certificate when it is signed by the CA in `caCertificateSecretRef` (Educates adds that CA to the session's trust store). The project must allow anonymous pulls, or the workshop needs a pull secret. Also check each workshop for other downloads during the exercises (packages, Git repositories).
+- **The cluster check** pulls `registry.k8s.io/e2e-test-images/agnhost`, and with `--workshop` a sample workshop from GitHub: point `--workshop-url` at the exported `workshop.yaml` instead.
 
 ## Pod Security
 
-Educates' own recommendation is to enforce security with Kyverno, not with Pod Security Standards, and that is the configuration tested here (`policyEnforcement.clusterPolicy.engine: Kyverno`). Educates then sets no `pod-security.kubernetes.io/enforce` label on workshop namespaces: its Kyverno policies apply the security policy of each workshop. Educates 4, its system components and workshop sessions ran on Talos's default (`baseline` enforced) in these tests.
+Educates' own recommendation is to enforce security with Kyverno, not with Pod Security Standards, and that is the configuration tested here (`policyEnforcement.clusterPolicy.engine: Kyverno`). Educates then sets no `pod-security.kubernetes.io/enforce` label on workshop namespaces: its Kyverno policies apply the security policy of each workshop. Educates 4, its system components and workshop sessions ran on Talos's default (`baseline` enforced) in these tests, with one exception: the node CA injector, privileged with a `hostPath`, is refused. Disable it (`nodeCATrust`, see [getting-started.md](getting-started.md#configure-and-deploy)).
 
 Not tested: workshops that need privileged pods, such as Docker in the session. With `baseline` enforced cluster-wide, their namespaces may need the `privileged` level. Also not tested: `pod-security-standards` as the policy engine, where Educates labels the namespaces itself: training portals `baseline`, workshop environments `privileged`, and session namespaces with the workshop's policy (`restricted` by default).
 
@@ -195,4 +225,13 @@ Every check should pass:
 - **LoadBalancer:** a Service gets an IP and answers;
 - **workshop network:** a replica of the Educates workshop namespace and its policy reaches cluster DNS, Services and the API.
 
-Then [install Educates](getting-started.md#5-install-educates), and run `scripts/e2e-test.sh --workshop` for a real workshop session.
+Then [install Educates](getting-started.md#5-install-educates), and run `scripts/e2e-test.sh --workshop` for a real workshop session. With Educates installed, the check also requires every Educates, Contour and Kyverno workload at full strength: the install reports `Ready` even when a DaemonSet's pods are all refused.
+
+## Tested on
+
+Besides the clusters built by these modules, this page was followed end to end on a Talos cluster built and run by another team: Talos 1.14, Kubernetes 1.37, Cilium with L2 announcements and its own Gateway API, Ceph CSI, three control planes and three workers, Flux and cert-manager already running, no internet access from pods, and a pull-through cache with Talos registry mirrors. Educates `4.0.0-alpha.13` installed, the owner reviewed the inventory, a workshop ran with its content published to the internal registry, and the uninstall left nothing behind.
+
+Things to expect on a cluster that runs other operators:
+
+- **`kubectl get all` in a workshop terminal prints `Forbidden` errors.** Some operators (Flux, for example) add their resource types to the `all` category, and the session's user may not list them. The errors are harmless: the core resources are still listed. Some workshops, such as Kubernetes Fundamentals, use `kubectl get all` and say so.
+- **Session quota during rollouts.** A workshop with a small budget can show `exceeded quota` events while a Deployment updates: Kubernetes starts the new pods before stopping the old ones. The ReplicaSet retries and the rollout completes.

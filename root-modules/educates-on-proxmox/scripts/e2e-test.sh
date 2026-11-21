@@ -306,6 +306,23 @@ else
     PHASE=$(kubectl get "$r" cluster -o jsonpath='{.status.phase}' 2>/dev/null)
     [ "$PHASE" = "Ready" ] && pass "$r: Ready" || fail "$r: ${PHASE:-missing}"
   done
+  # Every workload of the platform at full strength. A Ready status does not cover it: a DaemonSet
+  # whose pods are refused (Pod Security, for example) stays at 0 ready without failing the install.
+  for ns in educates-installer educates contour kyverno; do
+    kubectl get namespace "$ns" >/dev/null 2>&1 || continue
+    BAD=$(kubectl -n "$ns" get deployments,statefulsets,daemonsets -o json | jq -r '.items[]
+      | if .kind == "DaemonSet" then [.status.desiredNumberScheduled // 0, .status.numberReady // 0]
+        else [.spec.replicas // 1, .status.readyReplicas // 0] end as [$want, $ready]
+      | select($ready < $want) | "\(.kind)/\(.metadata.name) \($ready)/\($want)"')
+    if [ -z "$BAD" ]; then pass "$ns: all workloads ready"
+    else
+      while read -r w; do
+        WHY=$(kubectl -n "$ns" get events --field-selector type=Warning,involvedObject.name="$(echo "${w%% *}" | cut -d/ -f2)" \
+          -o jsonpath='{.items[-1:].message}' 2>/dev/null | cut -c1-160)
+        fail "$ns: $w ready${WHY:+ ($WHY)}"
+      done <<<"$BAD"
+    fi
+  done
   ENVOY_IP=$(kubectl -n contour get svc -o json 2>/dev/null | jq -r '[.items[] | select(.spec.type == "LoadBalancer") | .status.loadBalancer.ingress[0].ip // empty] | first // empty')
   [ -n "$ENVOY_IP" ] && pass "ingress (Envoy) LoadBalancer IP: $ENVOY_IP" || fail "ingress (Envoy) has no LoadBalancer IP"
   DOMAIN=$(kubectl get educatesclusterconfig cluster -o jsonpath='{.spec.ingress.domain}')

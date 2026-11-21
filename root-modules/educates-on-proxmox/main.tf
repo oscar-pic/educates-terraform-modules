@@ -32,6 +32,7 @@ module "cluster" {
   allow_scheduling_on_control_planes = var.allow_scheduling_on_control_planes
   cilium                             = var.cilium
   gateway_api                        = var.gateway_api
+  extra_config_patches               = var.extra_config_patches
 
   # Cluster services: LoadBalancer IPs and storage.
   load_balancer         = var.load_balancer
