@@ -298,6 +298,7 @@ Known Educates 4 alpha behaviours on this cluster:
 
 - **Day-2 operations.** See [operations.md](operations.md): upgrades, certificate renewal, scaling, uninstalling Educates, destroying the cluster.
 - **Requirements reference.** See [requirements.md](requirements.md).
+- **Trying a new Educates release first.** See [local-test-cluster.md](local-test-cluster.md): a Talos cluster in Docker on your computer.
 - **How the modules are built, and why.** See [design.md](design.md).
 
 ## Glossary

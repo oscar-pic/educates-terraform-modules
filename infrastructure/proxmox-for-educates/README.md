@@ -19,6 +19,7 @@ It does not install an ingress controller or cert-manager: the Educates 4 operat
 
 - Requirements: [docs/requirements.md](docs/requirements.md).
 - Day-2 operations: [docs/operations.md](docs/operations.md).
+- Trying Educates on a local Talos cluster in Docker, without Proxmox: [docs/local-test-cluster.md](docs/local-test-cluster.md).
 - Design, decisions and open points: [docs/design.md](docs/design.md).
 
 ## Usage

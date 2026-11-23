@@ -235,9 +235,12 @@ kubectl get crd -o name | grep -E '\.educates\.dev$' | xargs -r kubectl delete
 #    Kyverno may leave behind webhooks it created itself (failurePolicy Fail, pointing to a
 #    Service that no longer exists). Delete them:
 kubectl delete validatingwebhookconfigurations,mutatingwebhookconfigurations -l webhook.kyverno.io/managed-by=kyverno
+#    On a cluster you did not build with these modules, also delete the Cilium policy you applied
+#    from bring-your-own-cluster.md (here Terraform owns it, and destroying the cluster removes it):
+#    kubectl delete ciliumclusterwidenetworkpolicy educates-allow-in-cluster
 # 5. Check: no volumes left, and nothing of Educates, Contour or Kyverno (no output).
 kubectl get pv
-kubectl get namespaces,crd,apiservices,validatingwebhookconfigurations,mutatingwebhookconfigurations,ingressclasses,clusterroles,clusterrolebindings \
+kubectl get namespaces,crd,apiservices,validatingwebhookconfigurations,mutatingwebhookconfigurations,validatingadmissionpolicies,validatingadmissionpolicybindings,ingressclasses,clusterroles,clusterrolebindings \
   -o name | grep -E 'educates|kyverno|contour|wgpolicyk8s'
 ```
 

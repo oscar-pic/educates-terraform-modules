@@ -11,7 +11,7 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 
 ## Checked again with `4.0.0-alpha.14`
 
-On a local Talos 1.14 cluster (Talos in Docker, Cilium 1.20 with the same values as this module), following [getting-started.md](getting-started.md#5-install-educates) and [bring-your-own-cluster.md](bring-your-own-cluster.md) unchanged: the install, the inventory and a workshop session in a browser (terminals, console, editor, clickable actions) all worked.
+On a local Talos 1.14 cluster (Talos in Docker, Cilium 1.20 with the same values as this module; method in [local-test-cluster.md](local-test-cluster.md)), following [getting-started.md](getting-started.md#5-install-educates) and [bring-your-own-cluster.md](bring-your-own-cluster.md) unchanged: the install, the inventory and a workshop session in a browser (terminals, console, editor, clickable actions) all worked.
 
 | # | With alpha.14 |
 |---|---|
@@ -21,12 +21,13 @@ On a local Talos 1.14 cluster (Talos in Docker, Cilium 1.20 with the same values
 | 5 | Partly fixed: the operator (`educates-installer`) now meets `restricted`. `training-portal`, `secrets-manager` and `session-manager` still lack `seccompProfile` (the `educates` namespace is now labelled `privileged`, so only the portal's warning shows) |
 | 6 | Still there: a portal deployed without `--overdue` gets `overdue: 2m` |
 | 7 | Still there, and wider: a new portal with `--reserved 1` gets no reserved session, and raising `reserved` on an existing portal (to 2) created none either; the portal logs `Updated status of workshop environment ... reserved=2` and nothing else. The kopf warning about listing CRDs is gone |
+| 9 | Partly fixed: the portals' SecretCopiers were gone within 30 seconds of deleting the portals, no Kyverno webhook was left, and the two new ValidatingAdmissionPolicies go with the platform. `--purge` still leaves the `educates` namespace (with `educates-registry-hosts`) and the ten runtime CRDs ([item 9](#9-uninstall-leaves-resources-behind)) |
 | 13 | Still there: Contour `v1.33.8`, same `contour bootstrap --xds-address=contour` with no `--dns-lookup-family` |
 | 14, 16 | Still there: Kyverno takes only `provider`, its admission controller runs one replica. New: the install checks Kyverno and waits for it. Measured: pods in session namespaces refused for ~6 minutes after a node failure, ~30 seconds during a drain ([item 14](#14-bundled-kyverno-one-replica-webhooks-that-fail-closed)) |
 | 17 | Partly fixed, see [item 17](#17-nodecatrust-auto-installs-a-node-ca-injector-that-cannot-run-on-talos) |
 | 18 | Still there: `educates:session-manager:admin` binds `admin` cluster-wide. New: narrower roles for the portal and console, and two ValidatingAdmissionPolicies |
 
-Not re-checked: 4, 8, 9, 10, 11, 12 and 15. The classic instructions renderer is gone in alpha.14; the sample workshop `lab-k8s-fundamentals` already uses Hugo and renders fine.
+Not re-checked: 4, 8, 10, 11, 12 and 15. The classic instructions renderer is gone in alpha.14; the sample workshop `lab-k8s-fundamentals` already uses Hugo and renders fine.
 
 | # | Item | Impact | Workaround here |
 |---|---|---|---|
@@ -159,6 +160,8 @@ Also in the portal log, at start-up: kopf cannot list CRDs (`customresourcedefin
 A second uninstall the next day behaved differently. SecretCopiers of an already-deleted portal were still there after 3 minutes. That time they disappeared with the platform, and no finalizer got stuck. The cleanup of SecretCopiers is not reliable either way.
 
 A third uninstall, on a freshly built cluster, also left a `ValidatingWebhookConfiguration` of Kyverno's, `kyverno-cleanup-validating-webhook-cfg` (`failurePolicy: Fail`, label `webhook.kyverno.io/managed-by: kyverno`). Kyverno's controllers create these webhooks themselves, so `helm uninstall` does not remove them, and this one outlived its controller and the Service it calls.
+
+**With `4.0.0-alpha.14`**, following the documented order on a local cluster with two portals: the portals' eight SecretCopiers were gone within 30 seconds, and their volumes with them. `platform delete --purge` took 18 seconds, removed Contour, Kyverno (no webhook of its own left behind this time), the operator, its four CRDs, the `educates-installer` and `educates-secrets` namespaces and the two ValidatingAdmissionPolicies. It still left the `educates` namespace, with `educates-registry-hosts`, and the ten runtime CRDs (`training.educates.dev`, `secrets.educates.dev`), with the cluster-scoped `Workshop` objects of every portal ever deployed. After the manual step, a listing of every object in the cluster showed nothing of Educates, Contour or Kyverno.
 
 **Possible fixes.**
 
