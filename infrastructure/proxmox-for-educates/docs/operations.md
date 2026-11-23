@@ -84,6 +84,7 @@ What to expect, measured on a 3 + 3 node cluster going from v1.14.5 to v1.14.6:
 - **No API outage.** Talos moves the VIP before it shuts the node down.
 - **The final `tofu apply` replaces only the downloaded image.** It also updates the installer in the configurations, live and with no reboot, and the next plan shows no changes.
 - **Workloads with a single replica and a `ReadWriteOnce` volume are unavailable while their node is upgraded.** Their pod moves to another node only after the volume is detached from the old one. The Educates training portal is one of them: it was unreachable for about 2 minutes, then came back with its data. Upgrade workers outside class hours.
+- **Workshop security policies are not enforced while Kyverno moves.** The bundled Kyverno runs one replica. Stopped gracefully, as in a drain, it removes its admission webhooks, and registers them again when it starts on another node, about a minute later. Pods created in between skip the workshop policies (Educates 4 alpha, [educates-feedback.md](educates-feedback.md), item 14). One more reason to upgrade outside class hours.
 
 If the nodes cannot reach the internet, mirror the installer image (`factory.talos.dev/...`) before the first upgrade. At creation time Proxmox downloads the disk image, not the nodes, so a missing mirror only shows up on the first upgrade.
 
@@ -134,7 +135,6 @@ ha-manager set vm:<vm-id> --state started     # to start it again
 ```
 
 A manual migration (`ha-manager migrate vm:<vm-id> <host>`) is temporary: failback, or the next apply, brings the VM back to its `proxmox_node`. To move a VM for good, change its `proxmox_node` and apply. For host maintenance, stop the VM as above, or use the host's HA maintenance mode. The token of the module does not need these privileges: they are for the Proxmox administrator.
-
 
 ### When a Proxmox host fails
 

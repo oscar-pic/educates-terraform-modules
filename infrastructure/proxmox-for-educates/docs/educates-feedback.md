@@ -18,11 +18,15 @@ On a local Talos 1.14 cluster (Talos in Docker, Cilium 1.20 with the same values
 | 1 | Still there: without the Cilium policy, a session cannot resolve the portal or reach the API |
 | 2 | Still there: `blockedCidrs: []` reaches the `SessionManager`, the rendered `educates-config` keeps the metadata CIDRs |
 | 3 | Still there: `bundledContour` gained an `operational` block (replicas, resources, node selector, tolerations, pod labels and annotations), but nothing for the Envoy Service |
-| 14, 16 | Still there: Kyverno takes only `provider`, its admission controller runs one replica. New: the install checks Kyverno and waits for it |
+| 5 | Partly fixed: the operator (`educates-installer`) now meets `restricted`. `training-portal`, `secrets-manager` and `session-manager` still lack `seccompProfile` (the `educates` namespace is now labelled `privileged`, so only the portal's warning shows) |
+| 6 | Still there: a portal deployed without `--overdue` gets `overdue: 2m` |
+| 7 | Still there, and wider: a new portal with `--reserved 1` gets no reserved session, and raising `reserved` on an existing portal (to 2) created none either; the portal logs `Updated status of workshop environment ... reserved=2` and nothing else. The kopf warning about listing CRDs is gone |
+| 13 | Still there: Contour `v1.33.8`, same `contour bootstrap --xds-address=contour` with no `--dns-lookup-family` |
+| 14, 16 | Still there: Kyverno takes only `provider`, its admission controller runs one replica. New: the install checks Kyverno and waits for it. Also found: on a graceful stop Kyverno removes its webhooks, so policies are not enforced until it is back ([item 14](#14-bundled-kyverno-one-replica-webhooks-that-fail-closed)) |
 | 17 | Partly fixed, see [item 17](#17-nodecatrust-auto-installs-a-node-ca-injector-that-cannot-run-on-talos) |
 | 18 | Still there: `educates:session-manager:admin` binds `admin` cluster-wide. New: narrower roles for the portal and console, and two ValidatingAdmissionPolicies |
 
-The other items were not re-checked. The classic instructions renderer is gone in alpha.14; the sample workshop `lab-k8s-fundamentals` already uses Hugo and renders fine.
+Not re-checked: 4, 8, 9, 10, 11, 12 and 15. The classic instructions renderer is gone in alpha.14; the sample workshop `lab-k8s-fundamentals` already uses Hugo and renders fine.
 
 | # | Item | Impact | Workaround here |
 |---|---|---|---|
@@ -39,7 +43,7 @@ The other items were not re-checked. The classic instructions renderer is gone i
 | 11 | Proposal: a documentation section for on-premises clusters | Most findings here are not specific to Proxmox or Talos | — |
 | 12 | Proposal: a cluster readiness check in the Educates CLI | Users find cluster problems only when a workshop fails | `scripts/e2e-test.sh` in this repository |
 | 13 | The bundled Envoy looks up the bare name `contour` in the site DNS, every few seconds | None functionally; constant noise in the DNS servers' logs | — |
-| 14 | Bundled Kyverno: one replica, webhooks that fail closed | After losing the node Kyverno runs on, no Educates pod can be created for minutes, and the training portal stays down until restarted by hand | Documented `rollout restart` |
+| 14 | Bundled Kyverno: one replica, webhooks that fail closed | After losing the node Kyverno runs on, no Educates pod can be created for minutes, and the training portal stays down until restarted by hand. On a planned stop (drain), the opposite: workshop policies are not enforced until Kyverno is back | Documented `rollout restart`; upgrade outside class hours |
 | 15 | `platform render` does not show what the operator installs | A cluster owner cannot review Kyverno, Contour, their webhooks and roles before the install | `scripts/educates-inventory.sh` right after the install |
 | 16 | The bundled Kyverno chart takes no values | Its webhooks, replicas and resources cannot be adapted to a shared cluster | — |
 | 17 | `nodeCATrust: Auto` installs a node CA injector that cannot run on Talos | alpha.13: refused by Pod Security, install still `Ready`. alpha.14: install times out | Documented `nodeCATrust.mode: Disabled`; the e2e check flags workloads not ready |
@@ -234,11 +238,20 @@ failed to call webhook: Post "https://kyverno-svc.kyverno.svc:443/vpol/disallow-
 
 Kyverno came back on another node a minute later. By then, the ReplicaSet controller was backing off: the portal was still down six minutes later, until `kubectl rollout restart deployment/training-portal`. The rest of the cluster had recovered: API, nodes and session.
 
-**Why it matters.** A single node failure, or a drain of the node that runs Kyverno, blocks every pod that Educates creates, including new workshop sessions. And it can leave the portal down until someone intervenes. The portal is already a single replica (item 10).
+**With alpha.14**, on a local Talos cluster, the admission controller still runs one replica. We tried both ways of losing it, and checked a pod that the workshop policy rejects (`pause`, no security context) in a session namespace (`restricted`):
+
+| Kyverno lost by | Its webhooks | A pod in a session namespace | Pods elsewhere |
+|---|---|---|---|
+| Abrupt node failure (`docker kill` of the node) | Stay registered | Every pod refused: `failed calling webhook "vpol.validate.kyverno.svc-fail-…"`, for about 6 minutes, until Kyverno runs on another node | Not affected |
+| Graceful shutdown (scaled to 0; a drain or a controlled reboot also stops it gracefully) | Removed by Kyverno on shutdown (4 `vpol` webhooks to 0), registered again when it starts | **Admitted, against the policy** | Not affected |
+
+So the bundled Kyverno fails closed on a node failure, and **fails open** on a planned stop: while Kyverno moves during a drain or an upgrade, workshop sessions run without their security policy.
+
+**Why it matters.** A single node failure blocks every pod that Educates creates, including new workshop sessions. And it can leave the portal down until someone intervenes. The portal is already a single replica (item 10). A planned stop of Kyverno's node, which is routine (upgrades), leaves the workshop policies unenforced for as long as Kyverno takes to start again.
 
 **Possible fixes:**
 
-- Run the bundled Kyverno admission controller with three replicas, spread over nodes (anti-affinity or topology spread), with a PodDisruptionBudget. This is the Kyverno project's recommendation for production.
+- Run the bundled Kyverno admission controller with three replicas, spread over nodes (anti-affinity or topology spread), with a PodDisruptionBudget. This is the Kyverno project's recommendation for production, and it covers both cases: a drain cannot stop the last replica, and a node failure leaves two.
 - Or, for the pod-security policies, a `failurePolicy` that does not block the platform's own components while Kyverno is unavailable.
 - And let the operator notice a Deployment that cannot create its pod, and retry.
 
