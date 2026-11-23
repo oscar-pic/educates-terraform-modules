@@ -84,7 +84,7 @@ What to expect, measured on a 3 + 3 node cluster going from v1.14.5 to v1.14.6:
 - **No API outage.** Talos moves the VIP before it shuts the node down.
 - **The final `tofu apply` replaces only the downloaded image.** It also updates the installer in the configurations, live and with no reboot, and the next plan shows no changes.
 - **Workloads with a single replica and a `ReadWriteOnce` volume are unavailable while their node is upgraded.** Their pod moves to another node only after the volume is detached from the old one. The Educates training portal is one of them: it was unreachable for about 2 minutes, then came back with its data. Upgrade workers outside class hours.
-- **Workshop security policies are not enforced while Kyverno moves.** The bundled Kyverno runs one replica. Stopped gracefully, as in a drain, it removes its admission webhooks, and registers them again when it starts on another node, about a minute later. Pods created in between skip the workshop policies (Educates 4 alpha, [educates-feedback.md](educates-feedback.md), item 14). One more reason to upgrade outside class hours.
+- **No new workshop pods for about 30 seconds while Kyverno moves.** The bundled Kyverno runs one replica. When its node is drained, pods in workshop namespaces are refused until the new replica is ready ([educates-feedback.md](educates-feedback.md), item 14). Do not scale Kyverno to 0 to work around it: it then removes its webhooks, and workshop policies are not enforced until it is back.
 
 If the nodes cannot reach the internet, mirror the installer image (`factory.talos.dev/...`) before the first upgrade. At creation time Proxmox downloads the disk image, not the nodes, so a missing mirror only shows up on the first upgrade.
 
