@@ -12,8 +12,8 @@
 #
 # Objects count as created by the install when they are newer than the educates-installer
 # namespace. Namespaces older than it are the cluster's own: the script flags any admission
-# webhook that fails closed, intercepts more than Kyverno's own resource types, and applies to
-# one of them. Needs kubectl and jq, and a kubeconfig that can read cluster-scoped objects.
+# webhook that fails closed, intercepts more than Kyverno's own resource types, applies to
+# one of them, and has no objectSelector narrowing it to labelled objects. Needs kubectl and jq, and a kubeconfig that can read cluster-scoped objects.
 
 set -uo pipefail
 
@@ -95,11 +95,15 @@ for kind in validatingwebhookconfigurations mutatingwebhookconfigurations; do
       echo "     objectSelector: $(jq -c '.objectSelector // {}' <<<"$wh")"
       echo "     rules: ${rules:-none}"
       echo "     namespaces matched now: ${hit:-none}"
+      objsel=$(jq -c '.objectSelector // {} | select(. != {})' <<<"$wh")
       if [ "$fp" = "Fail" ] && [ -n "$own" ] && [ -n "$rules" ]; then
-        if [ "$other" != 0 ]; then
-          echo "     >>> ATTENTION: fails closed on the cluster's own namespaces: $own"; ATTENTION=$((ATTENTION + 1))
-        else
+        if [ "$other" = 0 ]; then
           echo "     note: fails closed in every namespace, but only for Kyverno's own resource types"
+        elif [ -n "$objsel" ]; then
+          # Called only for objects carrying those labels (for example the ones Kyverno generates).
+          echo "     note: fails closed in every namespace, but only for objects matching its objectSelector"
+        else
+          echo "     >>> ATTENTION: fails closed on the cluster's own namespaces: $own"; ATTENTION=$((ATTENTION + 1))
         fi
       fi
     done < <($K get "$kind" "$cfg" -o json | jq -c '.webhooks[]?')   # not a pipe: ATTENTION must survive

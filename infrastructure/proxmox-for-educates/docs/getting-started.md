@@ -70,7 +70,7 @@ Install these tools on that machine. On a jump host, you can put the binaries in
 | OpenTofu (or Terraform) | ≥ 1.6 | [opentofu.org](https://opentofu.org/docs/intro/install/) |
 | `kubectl` | within one minor of Kubernetes (1.36–1.38) | [kubernetes.io](https://kubernetes.io/docs/tasks/tools/) |
 | `talosctl` | same minor as Talos (1.14) | [Talos releases](https://github.com/siderolabs/talos/releases) |
-| Educates CLI (`educates`) | same as Educates (tested with `4.0.0-alpha.13`) | [Educates releases](https://github.com/educates/educates-training-platform/releases) |
+| Educates CLI (`educates`) | same as Educates (tested with `4.0.0-alpha.13` and `4.0.0-alpha.14`) | [Educates releases](https://github.com/educates/educates-training-platform/releases) |
 | `git`, `curl`, `jq`, `openssl` | any | your package manager |
 | `tmux` | any, jump host only | your package manager |
 
@@ -160,7 +160,7 @@ An apply can always be run again: plan and apply once more, and it continues whe
 
 ## 5. Install Educates
 
-Educates 4 is installed by an operator, with the Educates CLI. Its own documentation is in the [Educates installation guides](https://github.com/educates/educates-training-platform/tree/develop/project-docs/installation-guides). This section is the path tested on this cluster, with Educates `4.0.0-alpha.13`.
+Educates 4 is installed by an operator, with the Educates CLI. Its own documentation is in the [Educates installation guides](https://github.com/educates/educates-training-platform/tree/develop/project-docs/installation-guides). This section is the path tested on this cluster, with Educates `4.0.0-alpha.13`. The same steps also work with `4.0.0-alpha.14`, tested on a local Talos cluster.
 
 Run these commands where `kubectl` reaches the cluster, in `~/educates` (outside the clone). With a jump host:
 
@@ -257,7 +257,7 @@ kubectl -n contour get service contour-envoy                    # EXTERNAL-IP is
 About the two Secrets and the node CA trust:
 
 - **Secret names.** Do not name your Secret `educates-wildcard-tls`: that is the copy the operator makes and owns. The operator keeps its copy up to date, so to renew the certificate you only replace `educates-static-tls`, by hand or with a tool such as External Secrets ([operations.md](operations.md)).
-- **`nodeCATrust`.** With a CA configured, Educates installs by default a `node-ca-injector` DaemonSet that writes the CA into `/etc/containerd/certs.d` on every node, so the nodes can pull images from registries served under your domain (workshops that run an image registry in the session). On Talos it cannot work: its pods are privileged with a `hostPath`, which Talos's default Pod Security (`baseline`) rejects, and Talos's containerd does not read that directory. The install still reports `Ready`, with the DaemonSet at 0 pods. Disable it. When nodes must trust your CA, for example with your own lab CA, add it to Talos instead, with a `TrustedRootsConfig` document in `extra_config_patches.all` of your tfvars:
+- **`nodeCATrust`.** With a CA configured, Educates installs by default a `node-ca-injector` DaemonSet that writes the CA into `/etc/containerd/certs.d` on every node, so the nodes can pull images from registries served under your domain (workshops that run an image registry in the session). On Talos it cannot work: Talos's `/etc` is read-only, so its pods fail with `mkdir /etc/containerd/certs.d: read-only file system`, and Talos's containerd does not read that directory anyway. With `4.0.0-alpha.13`, its pods were refused by Talos's default Pod Security (`baseline`) and the install still reported `Ready`; with `4.0.0-alpha.14`, its namespace is `privileged` and the install waits for it until it times out. Disable it. When nodes must trust your CA, for example with your own lab CA, add it to Talos instead, with a `TrustedRootsConfig` document in `extra_config_patches.all` of your tfvars:
 
   ```hcl
   extra_config_patches = {

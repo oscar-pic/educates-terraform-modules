@@ -147,7 +147,7 @@ With another CNI (for example Calico, which matches pod IPs with `ipBlock`), thi
 
 ## What Educates installs
 
-Tested with Educates `4.0.0-alpha.13` in `Managed` mode, the mode in [getting-started.md](getting-started.md#5-install-educates):
+Tested with Educates `4.0.0-alpha.13` in `Managed` mode, the mode in [getting-started.md](getting-started.md#5-install-educates), and checked again with `4.0.0-alpha.14`:
 
 - **The Educates installer:** a Helm chart in namespace `educates-installer`. It runs the Educates operator, adds the CRDs of `config.educates.dev` and `platform.educates.dev`, and creates the ClusterRoles `educates:installer:*` and `educates:rbac:*`. The operator runs with a fine-grained ClusterRole generated from the charts it installs, not `cluster-admin`. The chart value `rbac.clusterAdmin` binds it to `cluster-admin` instead, as a fallback.
 - **The platform**, installed by the operator: the secrets manager, session manager, lookup service and remote access, in namespace `educates`. Their CRDs are in `secrets.educates.dev` and `training.educates.dev`. With a CA configured, also a node CA injector DaemonSet: disable it on Talos (`nodeCATrust`, see [getting-started.md](getting-started.md#configure-and-deploy)).
@@ -204,7 +204,12 @@ On Talos, the simplest way is a pull-through cache (for example Harbor) per regi
 
 ## Pod Security
 
-Educates' own recommendation is to enforce security with Kyverno, not with Pod Security Standards, and that is the configuration tested here (`policyEnforcement.clusterPolicy.engine: Kyverno`). Educates then sets no `pod-security.kubernetes.io/enforce` label on workshop namespaces: its Kyverno policies apply the security policy of each workshop. Educates 4, its system components and workshop sessions ran on Talos's default (`baseline` enforced) in these tests, with one exception: the node CA injector, privileged with a `hostPath`, is refused. Disable it (`nodeCATrust`, see [getting-started.md](getting-started.md#configure-and-deploy)).
+Educates' own recommendation is to enforce security with Kyverno, not with Pod Security Standards, and that is the configuration tested here (`policyEnforcement.clusterPolicy.engine: Kyverno`). Its Kyverno policies then apply the security policy of each workshop. Educates 4, its system components and workshop sessions ran on Talos's default (`baseline` enforced) in these tests. The labels differ by version:
+
+- `4.0.0-alpha.13` sets no `pod-security.kubernetes.io/enforce` label. The node CA injector, privileged with a `hostPath`, is refused.
+- `4.0.0-alpha.14` labels `contour`, `educates` and each workshop environment namespace `privileged`; training portal and session namespaces get no label. The node CA injector is no longer refused, but still cannot run on Talos.
+
+Either way, disable the node CA injector (`nodeCATrust`, see [getting-started.md](getting-started.md#configure-and-deploy)).
 
 Not tested: workshops that need privileged pods, such as Docker in the session. With `baseline` enforced cluster-wide, their namespaces may need the `privileged` level. Also not tested: `pod-security-standards` as the policy engine, where Educates labels the namespaces itself: training portals `baseline`, workshop environments `privileged`, and session namespaces with the workshop's policy (`restricted` by default).
 

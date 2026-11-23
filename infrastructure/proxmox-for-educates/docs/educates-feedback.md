@@ -9,6 +9,21 @@ Findings from running Educates 4 on these modules: Talos Linux on Proxmox VE, Ci
 
 Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 
+## Checked again with `4.0.0-alpha.14`
+
+On a local Talos 1.14 cluster (Talos in Docker, Cilium 1.20 with the same values as this module), following [getting-started.md](getting-started.md#5-install-educates) and [bring-your-own-cluster.md](bring-your-own-cluster.md) unchanged: the install, the inventory and a workshop session in a browser (terminals, console, editor, clickable actions) all worked.
+
+| # | With alpha.14 |
+|---|---|
+| 1 | Still there: without the Cilium policy, a session cannot resolve the portal or reach the API |
+| 2 | Still there: `blockedCidrs: []` reaches the `SessionManager`, the rendered `educates-config` keeps the metadata CIDRs |
+| 3 | Still there: `bundledContour` gained an `operational` block (replicas, resources, node selector, tolerations, pod labels and annotations), but nothing for the Envoy Service |
+| 14, 16 | Still there: Kyverno takes only `provider`, its admission controller runs one replica. New: the install checks Kyverno and waits for it |
+| 17 | Partly fixed, see [item 17](#17-nodecatrust-auto-installs-a-node-ca-injector-that-cannot-run-on-talos) |
+| 18 | Still there: `educates:session-manager:admin` binds `admin` cluster-wide. New: narrower roles for the portal and console, and two ValidatingAdmissionPolicies |
+
+The other items were not re-checked. The classic instructions renderer is gone in alpha.14; the sample workshop `lab-k8s-fundamentals` already uses Hugo and renders fine.
+
 | # | Item | Impact | Workaround here |
 |---|---|---|---|
 | 1 | Workshop NetworkPolicy blocks in-cluster traffic on Cilium | **Blocking**: workshop sessions cannot log in or reach the cluster | Yes, in the module (`educates_workshop_egress_fix`) |
@@ -27,7 +42,7 @@ Tested with Educates `4.0.0-alpha.13`, Cilium 1.20, Kubernetes 1.37, Talos 1.14.
 | 14 | Bundled Kyverno: one replica, webhooks that fail closed | After losing the node Kyverno runs on, no Educates pod can be created for minutes, and the training portal stays down until restarted by hand | Documented `rollout restart` |
 | 15 | `platform render` does not show what the operator installs | A cluster owner cannot review Kyverno, Contour, their webhooks and roles before the install | `scripts/educates-inventory.sh` right after the install |
 | 16 | The bundled Kyverno chart takes no values | Its webhooks, replicas and resources cannot be adapted to a shared cluster | — |
-| 17 | `nodeCATrust: Auto` installs a node CA injector that Pod Security `baseline` refuses, and the install still reports `Ready` | A DaemonSet at 0 pods, unnoticed; on Talos it could not work anyway | Documented `nodeCATrust.mode: Disabled`; the e2e check flags workloads not ready |
+| 17 | `nodeCATrust: Auto` installs a node CA injector that cannot run on Talos | alpha.13: refused by Pod Security, install still `Ready`. alpha.14: install times out | Documented `nodeCATrust.mode: Disabled`; the e2e check flags workloads not ready |
 | 18 | The session manager is bound to `admin` cluster-wide | Hard to accept on a cluster that also runs other workloads | Documented for the cluster owner's review |
 
 ## 1. Workshop NetworkPolicy blocks in-cluster traffic on Cilium
@@ -244,7 +259,9 @@ Kyverno came back on another node a minute later. By then, the ReplicaSet contro
 
 **Possible fix.** A pass-through for the Kyverno chart values in the `EducatesClusterConfig` (as for other bundled services), or at least for the webhook namespace selector, the replicas and the resources.
 
-## 17. `nodeCATrust: Auto` installs a node CA injector that cannot run, and the install reports `Ready`
+## 17. `nodeCATrust: Auto` installs a node CA injector that cannot run on Talos
+
+**alpha.14.** Two of the fixes below are in: the `educates` namespace is labelled `privileged`, and the install no longer reports `Ready`, it waits for the DaemonSet and times out (`SessionManager/cluster ... phase=Installing`). On Talos the pods still cannot start: `failed to mkdir "/etc/containerd/certs.d": mkdir /etc/containerd/certs.d: read-only file system` (`CreateContainerError`). The third fix, documenting where `nodeCATrust` does not apply, still holds. What follows is what we saw with alpha.13.
 
 **What we saw.** With a CA configured (`staticCertificate.caCertificateSecretRef`), the session manager installs the `node-ca-injector` DaemonSet by default. Its pods are privileged and mount `/etc/containerd/certs.d` from the host. Talos enforces Pod Security `baseline` cluster-wide by default, so every pod was refused:
 
